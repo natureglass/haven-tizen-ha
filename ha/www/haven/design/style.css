@@ -1,0 +1,685 @@
+/* Haven design styles. Editable on Home Assistant at /config/www/haven/design/style.css.
+   Written for the Tizen 4.0 web engine (2018 Samsung TVs, Chromium ~56):
+   no CSS grid, no backdrop-filter, and only transform/opacity animations so the
+   compositor does the work and the weak TV CPU stays idle.
+   The shell owns #stage (1920x1080, scaled to the screen); the design sets its theme
+   class (theme-dark / theme-light) and everything lives inside it. */
+
+/* ---------------------------------------------------------- themes */
+
+#stage.theme-dark, #stage {
+    --fg: #ffffff;
+    --fg-dim: rgba(255, 255, 255, 0.62);
+    --text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
+    --shade-top: rgba(0, 0, 0, 0.38);
+    --shade-bottom: rgba(0, 0, 0, 0.45);
+    --card-bg: rgba(12, 16, 26, 0.55);
+    --card-border: rgba(255, 255, 255, 0.12);
+    --tile-bg: rgba(255, 255, 255, 0.16);
+    --tile-border: rgba(255, 255, 255, 0.22);
+    --tile-fg: #ffffff;
+    --focus-bg: rgba(255, 255, 255, 0.94);
+    --focus-fg: #111111;
+    --overlay: rgba(0, 0, 0, 0.7);
+    --panel-bg: #0e121c;
+    --panel-fg: #ffffff;
+    --panel-border: rgba(255, 255, 255, 0.1);
+    --panel-dim: rgba(255, 255, 255, 0.55);
+    --panel-soft: rgba(255, 255, 255, 0.06);
+    --panel-hover: rgba(255, 255, 255, 0.12);
+    --toast-bg: rgba(14, 18, 28, 0.92);
+    --toast-fg: #ffffff;
+    --chip-bg: rgba(12, 16, 26, 0.55);
+    --chip-fg: #ffffff;
+    --chip-on-bg: #ffd27a;
+    --chip-on-fg: #2a1d00;
+    --ok: #8fe3b0;
+}
+
+#stage.theme-light {
+    --fg: #10141c;
+    --fg-dim: rgba(16, 20, 28, 0.6);
+    --text-shadow: 0 1px 14px rgba(255, 255, 255, 0.55);
+    --shade-top: rgba(255, 255, 255, 0.6);
+    --shade-bottom: rgba(255, 255, 255, 0.62);
+    --card-bg: rgba(255, 255, 255, 0.8);
+    --card-border: rgba(16, 20, 28, 0.08);
+    --tile-bg: rgba(255, 255, 255, 0.6);
+    --tile-border: rgba(255, 255, 255, 0.85);
+    --tile-fg: #10141c;
+    --focus-bg: #10141c;
+    --focus-fg: #ffffff;
+    --overlay: rgba(0, 0, 0, 0.35);
+    --panel-bg: #f4f5f8;
+    --panel-fg: #10141c;
+    --panel-border: rgba(16, 20, 28, 0.08);
+    --panel-dim: rgba(16, 20, 28, 0.55);
+    --panel-soft: rgba(16, 20, 28, 0.05);
+    --panel-hover: rgba(16, 20, 28, 0.08);
+    --toast-bg: rgba(255, 255, 255, 0.96);
+    --toast-fg: #10141c;
+    --chip-bg: rgba(255, 255, 255, 0.72);
+    --chip-fg: #10141c;
+    --chip-on-bg: #ffcf5c;
+    --chip-on-fg: #2a1d00;
+    --ok: #1d8a52;
+}
+
+#stage {
+    color: var(--fg);
+    font-family: "SamsungOne", "Tizen Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+[hidden] { display: none !important; }
+
+/* ---------------------------------------------------------- wallpaper */
+
+#bg, .wall, #shade {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.wall {
+    background-color: #0b1220;
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    transition: opacity 1.6s ease;
+    will-change: opacity;
+}
+
+.wall.on { opacity: 1; }
+
+/* Optional slow pan; off by default because it keeps the GPU busy */
+.wall.drift { animation: drift 90s linear forwards; }
+
+@keyframes drift {
+    from { transform: scale(1.0) translate3d(0, 0, 0); }
+    to   { transform: scale(1.08) translate3d(-30px, -14px, 0); }
+}
+
+#shade {
+    background:
+        linear-gradient(to bottom, var(--shade-top) 0%, rgba(0, 0, 0, 0) 24%),
+        linear-gradient(to top, var(--shade-bottom) 0%, rgba(0, 0, 0, 0) 40%);
+    pointer-events: none;
+}
+
+/* ---------------------------------------------------------- clock */
+
+#clock {
+    position: absolute;
+    top: 60px;
+    right: 96px;
+    text-align: right;
+    text-shadow: var(--text-shadow);
+}
+
+#time {
+    font-size: 84px;
+    font-weight: 300;
+    letter-spacing: -1px;
+    line-height: 1;
+}
+
+#date {
+    margin-top: 10px;
+    font-size: 28px;
+    opacity: 0.85;
+}
+
+#caption {
+    position: absolute;
+    left: 96px;
+    bottom: 64px;
+    font-size: 22px;
+    color: var(--fg-dim);
+    letter-spacing: 0.5px;
+}
+
+/* ---------------------------------------------------------- sensors (top left) */
+
+#sensors {
+    position: absolute;
+    top: 56px;
+    left: 96px;
+    min-width: 380px;
+    max-width: 640px;
+    padding: 16px 30px;
+    background: var(--card-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 26px;
+    transition: opacity 0.4s ease;
+}
+
+#sensors.stale { opacity: 0.6; }
+
+.sensor {
+    display: flex;
+    align-items: baseline;
+    padding: 8px 0;
+}
+
+.sensor .val {
+    width: 170px;
+    flex-shrink: 0;
+    font-size: 42px;
+    font-weight: 300;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.sensor.text .val { font-size: 32px; font-weight: 400; }
+
+.sensor .unit {
+    font-size: 24px;
+    color: var(--fg-dim);
+}
+
+.sensor .name {
+    font-size: 24px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sensor .note {
+    margin-left: 6px;
+    color: var(--fg-dim);
+}
+
+.sensor.dim { opacity: 0.45; }
+
+#sensors .offline {
+    margin-top: 6px;
+    padding-top: 10px;
+    border-top: 1px solid var(--card-border);
+    font-size: 20px;
+    color: var(--fg-dim);
+}
+
+/* ---------------------------------------------------------- light / switch chips */
+
+#chips {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 440px;
+    display: flex;
+    justify-content: center;
+    transition: opacity 0.4s ease;
+}
+
+#chips.stale { opacity: 0.6; }
+
+.chip {
+    display: flex;
+    align-items: center;
+    height: 64px;
+    margin: 0 9px;
+    padding: 0 26px 0 18px;
+    background: var(--chip-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 32px;
+    color: var(--chip-fg);
+    font-size: 24px;
+    white-space: nowrap;
+    transition: transform 0.18s ease-out, background-color 0.18s ease-out, box-shadow 0.18s ease-out;
+    will-change: transform;
+}
+
+.chip .glyph { width: 34px; height: 34px; margin-right: 10px; }
+.chip .name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+.chip.on {
+    background: var(--chip-on-bg);
+    border-color: var(--chip-on-bg);
+    color: var(--chip-on-fg);
+}
+
+.chip.dim { opacity: 0.5; }
+
+.chip.focused {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 4px var(--focus-bg), 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------------------------------------------------------- dock */
+
+#dock {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 150px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+}
+
+.tile {
+    margin: 0 26px;
+    text-align: center;
+}
+
+/* five tiles (two cameras) still fit 1920 px with the focused one enlarged */
+#dock.n5 .tile { margin: 0 14px; }
+#dock.n5 .tile.big .face { width: 300px; height: 180px; }
+
+/* camera tiles show a recent still from the camera */
+.tile.cam .face {
+    overflow: hidden;
+    background-size: cover;
+    background-position: center;
+}
+
+.tile.cam .face.thumb .glyph {
+    position: absolute;
+    right: 14px;
+    bottom: 12px;
+    width: 40px;
+    height: 40px;
+    padding: 6px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+    border-radius: 12px;
+}
+
+.tile.cam.focused .face.thumb { box-shadow: 0 0 0 5px var(--focus-bg), 0 28px 60px rgba(0, 0, 0, 0.45); }
+
+.tile .face {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--tile-bg);
+    border: 2px solid var(--tile-border);
+    border-radius: 30px;
+    color: var(--tile-fg);
+    transition: transform 0.18s ease-out, background-color 0.18s ease-out, color 0.18s ease-out, box-shadow 0.18s ease-out;
+    will-change: transform;
+}
+
+.tile.big .face { width: 320px; height: 192px; }
+.tile.small .face { width: 132px; height: 132px; border-radius: 66px; }
+
+.tile .glyph { width: 96px; height: 96px; }
+.tile.small .glyph { width: 64px; height: 64px; }
+
+.tile .face img {
+    position: absolute;
+    max-width: 62%;
+    max-height: 70%;
+}
+
+.tile .label {
+    margin-top: 22px;
+    font-size: 28px;
+    opacity: 0.6;
+    text-shadow: var(--text-shadow);
+    transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+
+.tile.focused .face {
+    transform: scale(1.12);
+    background: var(--focus-bg);
+    border-color: var(--focus-bg);
+    color: var(--focus-fg);
+    box-shadow: 0 28px 60px rgba(0, 0, 0, 0.45);
+}
+
+.tile.focused .label {
+    opacity: 1;
+    transform: translate3d(0, 14px, 0);
+}
+
+.tile.pressed .face { transform: scale(1.04); }
+
+/* ---------------------------------------------------------- overlays */
+
+.overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.panel {
+    width: 1100px;
+    padding: 40px 56px 30px;
+    background: var(--panel-bg);
+    color: var(--panel-fg);
+    border: 2px solid var(--panel-border);
+    border-radius: 28px;
+    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.5);
+}
+
+.panel.wide { width: 1360px; }
+
+.panel h2 {
+    margin: 0 0 22px;
+    font-size: 40px;
+    font-weight: 500;
+}
+
+.panel ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#settingsRows li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 28px;
+    margin-bottom: 4px;
+    border-radius: 14px;
+    font-size: 27px;
+}
+
+#settingsRows li .value {
+    max-width: 600px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    opacity: 0.7;
+}
+#settingsRows li .value:before { content: "\2039  "; opacity: 0; }
+#settingsRows li .value:after { content: "  \203A"; opacity: 0; }
+#settingsRows li .value.action:before,
+#settingsRows li .value.action:after { opacity: 0 !important; }
+
+#settingsRows li.focused {
+    background: var(--focus-bg);
+    color: var(--focus-fg);
+}
+
+#settingsRows li.focused .value { opacity: 1; }
+#settingsRows li.focused .value:before,
+#settingsRows li.focused .value:after { opacity: 0.6; }
+
+/* widget picker */
+
+#pickList {
+    height: 640px;
+    overflow: hidden;
+    font-size: 24px;
+}
+
+#pickList li.section {
+    margin: 18px 0 6px;
+    padding: 0 20px;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--panel-dim);
+}
+
+#pickList li.section:first-child { margin-top: 0; }
+
+#pickList li.item {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    border-radius: 12px;
+}
+
+#pickList li.item .box {
+    width: 26px;
+    height: 26px;
+    margin-right: 18px;
+    flex-shrink: 0;
+    border: 3px solid var(--panel-dim);
+    border-radius: 7px;
+    box-sizing: border-box;
+}
+
+#pickList li.item.checked .box {
+    background: var(--ok);
+    border-color: var(--ok);
+}
+
+#pickList li.item .name {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+#pickList li.item .where {
+    margin: 0 24px;
+    max-width: 520px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 19px;
+    color: var(--panel-dim);
+}
+
+#pickList li.item .val {
+    width: 150px;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--panel-dim);
+}
+
+#pickList li.item.focused {
+    background: var(--focus-bg);
+    color: var(--focus-fg);
+}
+
+#pickList li.item.focused .where,
+#pickList li.item.focused .val { color: inherit; opacity: 0.7; }
+#pickList li.item.focused .box { border-color: currentColor; }
+#pickList li.item.focused.checked .box { border-color: var(--ok); }
+
+#pickList li.message {
+    padding: 30px 20px;
+    font-size: 26px;
+    color: var(--panel-dim);
+}
+
+/* address editor */
+
+#addr {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 20px 24px;
+    font: inherit;
+    font-size: 30px;
+    color: #111;
+    background: #fff;
+    border: 2px solid var(--panel-border);
+    border-radius: 14px;
+    outline: none;
+}
+
+/* diagnostics */
+
+#diagStatus {
+    margin: -6px 0 22px;
+    padding: 14px 20px;
+    background: var(--panel-soft);
+    border-radius: 14px;
+    font-size: 22px;
+}
+
+#diagStatus .statusRow {
+    display: flex;
+    padding: 4px 0;
+}
+
+#diagStatus .k {
+    width: 340px;
+    flex-shrink: 0;
+    color: var(--panel-dim);
+}
+
+#diagStatus .v {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+#diagList {
+    height: 400px;
+    overflow: hidden;
+    font-size: 24px;
+}
+
+#diagList li {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-radius: 10px;
+}
+
+#diagList li .id {
+    font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    color: var(--panel-dim);
+}
+
+#diagList li.used { color: var(--ok); }
+#diagList li.focused { background: var(--panel-hover); }
+
+.hint {
+    margin: 22px 0 0;
+    font-size: 22px;
+    color: var(--panel-dim);
+    text-align: center;
+}
+
+.hint.left {
+    margin: -10px 0 18px;
+    text-align: left;
+}
+
+/* ---------------------------------------------------------- camera player */
+
+#player {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    color: #fff;
+    z-index: 5;
+}
+
+#avplayer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+}
+
+#camSnap, #camVideo {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: transparent;
+}
+
+#camBar {
+    position: absolute;
+    top: 40px;
+    left: 56px;
+    padding: 12px 24px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 30px;
+    font-size: 28px;
+}
+
+#camLive {
+    display: inline-block;
+    margin-right: 14px;
+    padding: 2px 12px;
+    background: #e5383b;
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    vertical-align: 3px;
+}
+
+#camLive:after { content: "LIVE"; }
+
+#camStatus {
+    position: absolute;
+    left: 50%;
+    bottom: 120px;
+    max-width: 1300px;
+    padding: 18px 32px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 18px;
+    font-size: 26px;
+    text-align: center;
+    transform: translateX(-50%);
+}
+
+#camHint {
+    position: absolute;
+    right: 56px;
+    top: 48px;
+    padding: 10px 22px;
+    background: rgba(0, 0, 0, 0.45);
+    border-radius: 24px;
+    font-size: 22px;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+
+#camHint.show { opacity: 1; }
+
+/* AVPlay draws behind the page: everything above it must be see-through */
+#stage.avplay-on #bg,
+#stage.avplay-on #shade,
+#stage.avplay-on #clock,
+#stage.avplay-on #sensors,
+#stage.avplay-on #caption,
+#stage.avplay-on #chips,
+#stage.avplay-on #dock,
+#stage.avplay-on #camSnap,
+#stage.avplay-on #camVideo { visibility: hidden; }
+
+#stage.avplay-on #player { background: transparent; }
+
+/* ---------------------------------------------------------- toast */
+
+#toast {
+    position: absolute;
+    left: 50%;
+    top: 24px;
+    max-width: 1100px;
+    padding: 18px 34px;
+    background: var(--toast-bg);
+    color: var(--toast-fg);
+    border-radius: 40px;
+    font-size: 26px;
+    opacity: 0;
+    transform: translate3d(-50%, -20px, 0);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+    z-index: 10;
+}
+
+#toast.show {
+    opacity: 1;
+    transform: translate3d(-50%, 0, 0);
+}

@@ -1,0 +1,30 @@
+# Haven TV home screen: keeps the TV's wallpaper folder in sync with your pictures.
+#
+# 1. Change /media/Pictures below to your picture folder (it is only read, never changed).
+# 2. Make sure configuration.yaml loads packages:
+#      homeassistant:
+#        packages: !include_dir_named packages
+# 3. Restart Home Assistant (also needed the first time /config/www exists).
+
+shell_command:
+  haven_wallpapers: "python3 /config/haven/haven_wallpapers.py /media/Pictures /config/www/haven/wallpapers"
+
+script:
+  haven_wallpapers_now:
+    alias: "Haven: sync TV wallpapers now"
+    icon: mdi:image-sync
+    sequence:
+      - action: shell_command.haven_wallpapers
+
+automation:
+  - id: haven_wallpapers_sync
+    alias: "Haven: sync TV wallpapers"
+    description: "Resize new pictures for the TV and update the list Haven reads."
+    mode: single
+    triggers:
+      - trigger: homeassistant
+        event: start
+      - trigger: time_pattern
+        minutes: "/15"
+    actions:
+      - action: shell_command.haven_wallpapers

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://haven.home/tv"
+        version="1.0.0"
+        viewmodes="maximized">
+    <tizen:application id="HavenHome1.Haven" package="HavenHome1" required_version="3.0"/>
+    <tizen:profile name="tv-samsung"/>
+    <name>Haven</name>
+    <description>Minimal home screen: YouTube, Internet, clock and nature wallpapers.</description>
+    <author>Alex</author>
+    <content src="index.html"/>
+    <icon src="icon.png"/>
+
+    <feature name="http://tizen.org/feature/screen.size.all"/>
+
+    <!-- Load the design and wallpapers from Home Assistant on the local network.
+         "*" so a new HA address only needs a change in Settings, not a reinstall. -->
+    <access origin="*" subdomains="true"/>
+    <tizen:privilege name="http://tizen.org/privilege/internet"/>
+    <!-- List installed apps (to find YouTube and the browser) and open them -->
+    <tizen:privilege name="http://tizen.org/privilege/application.info"/>
+    <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
+    <!-- Colour keys on the remote (red = safe mode at startup, yellow = app list) -->
+    <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+
+    <tizen:setting screen-orientation="landscape"
+                   context-menu="disable"
+                   background-support="disable"
+                   encryption="disable"
+                   install-location="auto"
+                   hwkey-event="enable"/>
+</widget>

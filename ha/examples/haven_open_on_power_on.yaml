@@ -1,0 +1,29 @@
+# Opens Haven every time the TV turns on.
+#
+# Needs the Samsung Smart TV integration. Replace media_player.samsung_tv with your TV's
+# media_player entity (not the remote entity), and check under History that Home Assistant
+# actually sees the TV go off and on.
+#
+# Add it in Settings > Automations & scenes > Create automation > three-dot menu >
+# Edit in YAML, or paste it into automations.yaml as a list item.
+#
+# Turn "Autorun Last App" off on the TV when using this, otherwise the TV opens Haven by
+# itself and this launch arrives while Haven is already open ("Not available" message).
+
+alias: "Haven: open on TV power-on"
+description: "Opens the Haven home screen whenever the Samsung TV turns on."
+mode: single
+triggers:
+  - trigger: state
+    entity_id: media_player.samsung_tv
+    to: "on"
+actions:
+  # the TV reports "on" a few seconds before it accepts commands
+  - delay: "00:00:10"
+  - action: media_player.play_media
+    target:
+      entity_id: media_player.samsung_tv
+    data:
+      media:
+        media_content_type: app
+        media_content_id: HavenHome1.Haven
