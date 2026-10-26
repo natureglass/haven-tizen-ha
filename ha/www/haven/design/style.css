@@ -234,6 +234,61 @@
 
 .chip .glyph { width: 34px; height: 34px; margin-right: 10px; }
 .chip .name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.chip .pct { margin-left: 10px; font-size: 20px; opacity: 0.75; }
+
+/* brightness bar above the focused light */
+#dimmer {
+    position: absolute;
+    bottom: 530px;
+    left: 760px;
+    width: 400px;
+    padding: 20px 26px 16px;
+    background: var(--panel-bg);
+    color: var(--panel-fg);
+    border: 2px solid var(--panel-border);
+    border-radius: 22px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    z-index: 4;
+}
+
+#dimName {
+    font-size: 26px;
+    margin-bottom: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 90px;
+}
+
+#dimValue {
+    position: absolute;
+    top: 18px;
+    right: 26px;
+    font-size: 28px;
+    font-weight: 600;
+}
+
+#dimTrack {
+    height: 18px;
+    background: var(--panel-soft);
+    border: 2px solid var(--panel-border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+#dimFill {
+    height: 100%;
+    width: 0;
+    background: var(--chip-on-bg);
+    border-radius: 8px;
+    transition: width 0.15s ease-out;
+}
+
+#dimHint {
+    margin-top: 12px;
+    font-size: 18px;
+    color: var(--panel-dim);
+}
 
 .chip.on {
     background: var(--chip-on-bg);
@@ -250,24 +305,83 @@
 
 /* ---------------------------------------------------------- dock */
 
+/* The track slides sideways when there are more tiles than fit (see scrollDock). */
 #dock {
     position: absolute;
-    left: 0;
-    right: 0;
+    left: 80px;
+    right: 80px;
     bottom: 150px;
+    height: 300px;
+}
+
+#dockTrack {
+    position: absolute;
+    left: 0;
+    bottom: 0;
     display: flex;
-    justify-content: center;
     align-items: flex-end;
+    white-space: nowrap;
+    transition: transform 0.25s ease-out;
+    will-change: transform;
 }
 
 .tile {
+    flex-shrink: 0;
     margin: 0 26px;
     text-align: center;
 }
 
-/* five tiles (two cameras) still fit 1920 px with the focused one enlarged */
-#dock.n5 .tile { margin: 0 14px; }
-#dock.n5 .tile.big .face { width: 300px; height: 180px; }
+/* five or more tiles: a little smaller, so five still fit without scrolling */
+#dock.compact .tile { margin: 0 14px; }
+#dock.compact .tile.big .face { width: 300px; height: 180px; }
+
+.tile .label {
+    max-width: 300px;
+    margin-left: auto;
+    margin-right: auto;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* arrows at the screen edge when more tiles are off screen */
+.dockMore {
+    position: absolute;
+    bottom: 250px;
+    width: 56px;
+    height: 56px;
+    line-height: 48px;
+    text-align: center;
+    font-size: 52px;
+    color: var(--panel-fg);
+    background: var(--panel-bg);
+    border: 2px solid var(--panel-border);
+    border-radius: 28px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.dockMore.show { opacity: 0.95; }
+#dockMoreL { left: 24px; }
+#dockMoreR { right: 24px; }
+
+/* apps without an icon show their initials */
+.tile .glyph.mono {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    font-size: 64px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+.tile.add .face { border-style: dashed; }
+.tile.add.focused .face { border-style: solid; }
 
 /* camera tiles show a recent still from the camera */
 .tile.cam .face {
@@ -409,13 +523,13 @@
 
 /* widget picker */
 
-#pickList {
+.picklist {
     height: 640px;
     overflow: hidden;
     font-size: 24px;
 }
 
-#pickList li.section {
+.picklist li.section {
     margin: 18px 0 6px;
     padding: 0 20px;
     font-size: 20px;
@@ -425,16 +539,16 @@
     color: var(--panel-dim);
 }
 
-#pickList li.section:first-child { margin-top: 0; }
+.picklist li.section:first-child { margin-top: 0; }
 
-#pickList li.item {
+.picklist li.item {
     display: flex;
     align-items: center;
     padding: 10px 20px;
     border-radius: 12px;
 }
 
-#pickList li.item .box {
+.picklist li.item .box {
     width: 26px;
     height: 26px;
     margin-right: 18px;
@@ -444,19 +558,19 @@
     box-sizing: border-box;
 }
 
-#pickList li.item.checked .box {
+.picklist li.item.checked .box {
     background: var(--ok);
     border-color: var(--ok);
 }
 
-#pickList li.item .name {
+.picklist li.item .name {
     flex: 1;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-#pickList li.item .where {
+.picklist li.item .where {
     margin: 0 24px;
     max-width: 520px;
     overflow: hidden;
@@ -466,24 +580,24 @@
     color: var(--panel-dim);
 }
 
-#pickList li.item .val {
+.picklist li.item .val {
     width: 150px;
     text-align: right;
     white-space: nowrap;
     color: var(--panel-dim);
 }
 
-#pickList li.item.focused {
+.picklist li.item.focused {
     background: var(--focus-bg);
     color: var(--focus-fg);
 }
 
-#pickList li.item.focused .where,
-#pickList li.item.focused .val { color: inherit; opacity: 0.7; }
-#pickList li.item.focused .box { border-color: currentColor; }
-#pickList li.item.focused.checked .box { border-color: var(--ok); }
+.picklist li.item.focused .where,
+.picklist li.item.focused .val { color: inherit; opacity: 0.7; }
+.picklist li.item.focused .box { border-color: currentColor; }
+.picklist li.item.focused.checked .box { border-color: var(--ok); }
 
-#pickList li.message {
+.picklist li.message {
     padding: 30px 20px;
     font-size: 26px;
     color: var(--panel-dim);
@@ -682,4 +796,10 @@
 #toast.show {
     opacity: 1;
     transform: translate3d(-50%, 0, 0);
+}
+
+/* app picker: the app being moved */
+.picklist li.item.moving {
+    outline: 3px dashed var(--ok);
+    outline-offset: -3px;
 }

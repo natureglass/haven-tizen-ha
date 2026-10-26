@@ -25,14 +25,17 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
   Assistant, resized for the TV automatically.
 - **Live sensors (top left):** weather, room temperatures, solar production, doors,
   thermostats. Up to 6.
-- **Light and switch buttons (above the dock):** toggled with the TV remote. Up to 8.
+- **Light and switch buttons (above the dock):** toggled with the TV remote, with a
+  brightness bar for dimmable lights. Up to 8.
 - **Cameras (in the dock):** a recent still on the tile, OK opens it full screen through
   Home Assistant's HLS stream. Up to 2.
 - **Auto-discovery:** on first connection Haven picks sensible defaults. It finds solar from
   the Energy dashboard, prefers camera sub-streams, and skips diagnostic entities. A picker
   on the TV lets you change everything, grouped by area.
 - **Dark, light or auto theme:** auto follows `sun.sun`.
-- **App dock:** YouTube and the Internet browser by default, easy to extend.
+- **App dock:** YouTube and the Internet browser by default. Add any installed app from a
+  checklist on the TV and put them in your own order; the dock scrolls when it's wider
+  than the screen.
 - **Remote design updates with a safety net:** offline cache, automatic rollback of
   broken updates, and a safe mode.
 
@@ -230,13 +233,30 @@ it again to reinstall the app.
 
 | Key | Does |
 |---|---|
-| Left / Right | Move along the dock, or along the light and switch buttons |
+| Left / Right | Move along the dock (it scrolls when it's wider than the screen), or along the light and switch buttons |
 | Up / Down | Between the dock and the light and switch buttons |
 | OK | Open an app, camera or settings, or switch the focused light on or off |
+| Up on a dimmable light | Brightness bar: Left / Right in 10 % steps (all the way left is off), OK or Down to close |
 | Left / Right in a camera | Switch to the other camera |
 | Back | Close a panel or camera (nothing on the home screen itself) |
 | Yellow | Installed apps and status (design source, HA connection, camera player) |
 | Red, within 6 s of opening | Safe mode: the built-in design |
+
+**Choosing apps:** the **Edit apps** tile (+) in the dock, or Settings > **Apps in the
+dock**:
+- *In the dock* lists your apps in dock order; *Other apps* lists everything else installed
+  on the TV, by name. Haven itself and hidden system apps aren't offered.
+- **OK** adds or removes an app.
+- To reorder, press **Right** on an app in the dock to pick it up, **Up / Down** to move
+  it, and **OK** to drop it.
+- Apps show their own icon; apps without one show their initials. YouTube and Internet
+  keep their simple symbols unless Settings > Tile icons is set to App icons.
+
+**Brightness:** lights that Home Assistant reports as dimmable show their level on the
+button (for example "Ceiling 60%"), and the first time you focus one, Haven shows the tip
+"Press Up to change the brightness". While you hold Left or Right, the change goes to Home
+Assistant once you stop, not on every step. Lights that only switch on and off say so
+when you press Up.
 
 **Choosing widgets:** Settings (gear tile) > **Home Assistant widgets**. It lists a
 *Suggested* section, then everything else grouped by area, with live values. OK ticks or

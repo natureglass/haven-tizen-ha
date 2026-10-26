@@ -13,12 +13,14 @@
     var H = window.Haven;
 
     // ------------------------------------------------------------------ dock apps
-    // ids: known Tizen app IDs (tried first). match: fallback on the installed app's name.
-    // Press Yellow on the TV to see installed apps and their IDs.
+    // The dock holds the apps you pick with the "+" tile (stored as Tizen app IDs, in order).
+    // These two are the defaults; they keep their own glyphs and are found by name if their
+    // usual ID differs on your TV. Press Yellow on the TV to see installed apps and their IDs.
     var APPS = {
-        youtube: { name: 'YouTube', ids: ['9Ur5IzDKqV.TizenYouTube'], match: /youtube/i },
-        internet: { name: 'Internet', ids: ['org.tizen.browser', 'com.samsung.tv.browser'], match: /^(internet|web ?browser|browser)$/i }
+        youtube: { name: 'YouTube', ids: ['9Ur5IzDKqV.TizenYouTube'], match: /youtube/i, glyph: 'play' },
+        internet: { name: 'Internet', ids: ['org.tizen.browser', 'com.samsung.tv.browser'], match: /^(internet|web ?browser|browser)$/i, glyph: 'globe' }
     };
+    var SELF_ID = /^HavenHome1\./;          // never offer Haven itself in the app picker
 
     var GLYPHS = {
         play: '<svg class="glyph" viewBox="0 0 100 100"><path d="M38 28 L74 50 L38 72 Z" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>',
@@ -26,14 +28,9 @@
         gear: '<svg class="glyph" viewBox="0 0 100 100"><path fill="currentColor" fill-rule="evenodd" stroke="currentColor" stroke-width="3" stroke-linejoin="round" d="M43.7 23.7 L44.4 14.4 L55.6 14.4 L56.3 23.7 L64.1 27.0 L71.2 20.9 L79.1 28.8 L73.0 35.9 L76.3 43.7 L85.6 44.4 L85.6 55.6 L76.3 56.3 L73.0 64.1 L79.1 71.2 L71.2 79.1 L64.1 73.0 L56.3 76.3 L55.6 85.6 L44.4 85.6 L43.7 76.3 L35.9 73.0 L28.8 79.1 L20.9 71.2 L27.0 64.1 L23.7 56.3 L14.4 55.6 L14.4 44.4 L23.7 43.7 L27.0 35.9 L20.9 28.8 L28.8 20.9 L35.9 27.0 Z M39 50 A11 11 0 1 0 61 50 A11 11 0 1 0 39 50 Z"/></svg>',
         bulb: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><path d="M50 16 C34 16 24 28 24 41 C24 51 30 57 35 62 C38 65 39 68 39 72 H61 C61 68 62 65 65 62 C70 57 76 51 76 41 C76 28 66 16 50 16 Z"/><path d="M40 81 H60 M43 89 H57"/></svg>',
         power: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"><path d="M50 16 V48"/><path d="M33 27 A30 30 0 1 0 67 27"/></svg>',
-        camera: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><rect x="12" y="30" width="54" height="40" rx="9"/><path d="M66 45 L88 33 V67 L66 55 Z"/></svg>'
+        camera: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><rect x="12" y="30" width="54" height="40" rx="9"/><path d="M66 45 L88 33 V67 L66 55 Z"/></svg>',
+        plus: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 24 V76 M24 50 H76"/></svg>'
     };
-
-    var DOCK = [
-        { app: 'youtube', label: 'YouTube', glyph: 'play', size: 'big' },
-        { app: 'internet', label: 'Internet', glyph: 'globe', size: 'big' },
-        { action: 'settings', label: 'Settings', glyph: 'gear', size: 'big' }
-    ];
 
     var KEY = {
         LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13,
@@ -55,6 +52,7 @@
         { key: 'clock24', label: 'Clock', options: [[true, '24-hour'], [false, '12-hour']] },
         { key: 'icons', label: 'Tile icons', options: [['simple', 'Simple'], ['original', 'App icons']] },
         { key: 'captions', label: 'Wallpaper names', options: [[true, 'Show'], [false, 'Hide']] },
+        { key: '_apps', label: 'Apps in the dock', action: 'apps' },
         { key: '_widgets', label: 'Home Assistant widgets', action: 'widgets' },
         { key: '_address', label: 'Home Assistant address', action: 'address' },
         { key: '_update', label: 'Check for design update', action: 'update' },
@@ -62,8 +60,9 @@
     ];
 
     // widgets: entity IDs in display order; null = never chosen, so suggestions get picked.
+    // dockApps: app IDs in dock order; null = never chosen, so YouTube and Internet are used.
     var DEFAULTS = { interval: 60, source: 'both', motion: false, theme: 'dark', clock24: true,
-        icons: 'simple', captions: true, focus: 0, widgets: null };
+        icons: 'simple', captions: true, focus: 0, widgets: null, dockApps: null };
     var cfg = {};
     (function () {
         for (var k in DEFAULTS) { if (DEFAULTS.hasOwnProperty(k)) { cfg[k] = H.get(k, DEFAULTS[k]); } }
@@ -102,7 +101,11 @@
             '<section id="sensors" hidden></section>' +
             '<div id="caption"></div>' +
             '<div id="chips" hidden></div>' +
-            '<nav id="dock"></nav>' +
+            '<div id="dimmer" hidden><div id="dimName"></div>' +
+                '<div id="dimTrack"><div id="dimFill"></div></div><div id="dimValue"></div>' +
+                '<div id="dimHint">Left / Right to dim &middot; OK or Down to close</div></div>' +
+            '<nav id="dock"><div id="dockTrack"></div></nav>' +
+            '<div id="dockMoreL" class="dockMore">&lsaquo;</div><div id="dockMoreR" class="dockMore">&rsaquo;</div>' +
             '<section id="player" hidden>' +
                 '<img id="camSnap" alt="">' +
                 '<video id="camVideo" hidden></video>' +
@@ -114,8 +117,11 @@
                 '<h2>Haven settings</h2><ul id="settingsRows"></ul>' +
                 '<p class="hint">Up / Down to choose &middot; Left / Right to change &middot; Back to close</p></div></section>' +
             '<section id="picker" class="overlay" hidden><div class="panel wide">' +
-                '<h2>Home Assistant widgets</h2><p id="pickCount" class="hint left"></p><ul id="pickList"></ul>' +
+                '<h2>Home Assistant widgets</h2><p id="pickCount" class="hint left"></p><ul id="pickList" class="picklist"></ul>' +
                 '<p class="hint">OK to show or hide &middot; Sensors top left, lights and switches above the dock, cameras in the dock &middot; Back to close</p></div></section>' +
+            '<section id="apps" class="overlay" hidden><div class="panel wide">' +
+                '<h2>Apps in the dock</h2><p id="appsCount" class="hint left"></p><ul id="appsList" class="picklist"></ul>' +
+                '<p id="appsHint" class="hint"></p></div></section>' +
             '<section id="editor" class="overlay" hidden><div class="panel">' +
                 '<h2>Home Assistant address</h2>' +
                 '<p class="hint left">The IP is enough, for example 192.168.1.10. Haven adds :8123/local/haven/ itself.</p>' +
@@ -280,7 +286,8 @@
                 var st = ha.states[eid];
                 if (!st) { return; }
                 var a = st.attributes || {}, keep = {};
-                each(['friendly_name', 'unit_of_measurement', 'device_class', 'temperature', 'current_temperature', 'hvac_action', 'entity_picture'],
+                each(['friendly_name', 'unit_of_measurement', 'device_class', 'temperature', 'current_temperature', 'hvac_action', 'entity_picture',
+                    'brightness', 'supported_color_modes'],
                     function (k) { if (a[k] !== undefined) { keep[k] = a[k]; } });
                 states[eid] = { state: st.state, attributes: keep };
                 if (ha.entityArea[eid]) { entityArea[eid] = ha.entityArea[eid]; areas[ha.entityArea[eid]] = ha.areaName[ha.entityArea[eid]]; }
@@ -617,6 +624,23 @@
         return !!st && st.state === 'on';
     }
 
+    // A light can be dimmed unless Home Assistant says it only does on/off.
+    function isDimmable(eid) {
+        if (domainOf(eid) !== 'light') { return false; }
+        var st = ha.states[eid], a = (st && st.attributes) || {};
+        var modes = a.supported_color_modes;
+        if (modes && modes.length) { return !(modes.length === 1 && modes[0] === 'onoff'); }
+        return a.brightness !== undefined && a.brightness !== null;
+    }
+
+    // 0 to 100; 0 when off.
+    function brightnessPct(eid) {
+        var st = ha.states[eid];
+        if (!st || st.state !== 'on') { return 0; }
+        var b = st.attributes && st.attributes.brightness;
+        return (b === undefined || b === null) ? 100 : Math.max(1, Math.round(b / 2.55));
+    }
+
     // ---------------------------------------------------- rendering
 
     var chipFocus = 0;
@@ -648,16 +672,104 @@
         each(buttons, function (eid, i) {
             var st = ha.states[eid];
             var unavailable = !st || st.state === 'unavailable';
-            cHtml += '<div class="chip' + (isOn(eid) ? ' on' : '') + (unavailable ? ' dim' : '') +
+            var dimmable = !unavailable && isDimmable(eid);
+            cHtml += '<div class="chip' + (isOn(eid) ? ' on' : '') + (unavailable ? ' dim' : '') + (dimmable ? ' dimmable' : '') +
                 (row === 'chips' && i === chipFocus ? ' focused' : '') + '" data-eid="' + esc(eid) + '">' +
                 GLYPHS[domainOf(eid) === 'light' ? 'bulb' : 'power'] +
-                '<span class="name">' + esc(displayName(eid)) + '</span></div>';
+                '<span class="name">' + esc(displayName(eid)) + '</span>' +
+                (dimmable && isOn(eid) ? '<span class="pct">' + brightnessPct(eid) + '%</span>' : '') + '</div>';
         });
         chips.innerHTML = cHtml;
         chips.hidden = !buttons.length;
         chips.className = stale ? 'stale' : '';
         if (!buttons.length && row === 'chips') { row = 'dock'; renderDock(); }
+        if (mode === 'dim') { renderDimmer(); }
+        maybeDimHint();
         buildDock();
+    }
+
+    // One-time tip the first time a dimmable light is focused.
+    function maybeDimHint() {
+        if (row !== 'chips' || mode !== 'dock' || H.get('dimHintShown', false)) { return; }
+        var eid = selectedOf('button').slice(0, MAX_BUTTONS)[chipFocus];
+        if (eid && isDimmable(eid)) {
+            H.set('dimHintShown', true);
+            toast('Press Up to change the brightness', 4000);
+        }
+    }
+
+    // ---------------------------------------------------- brightness
+    //
+    // Up on a dimmable light opens a bar; Left / Right change it in 10 % steps (down to off).
+    // Changes go to HA 350 ms after the last key press, so holding a key sends one update.
+
+    var dim = { eid: null, pct: 0, timer: null, sent: null };
+
+    function openDimmer(i) {
+        var eid = selectedOf('button').slice(0, MAX_BUTTONS)[i];
+        if (!eid) { return; }
+        if (!isDimmable(eid)) { toast(displayName(eid) + ' can only be switched on and off'); return; }
+        if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return; }
+        dim.eid = eid;
+        dim.pct = brightnessPct(eid);
+        mode = 'dim';
+        $('dimmer').hidden = false;
+        renderDimmer();
+    }
+
+    function closeDimmer() {
+        if (dim.timer) { clearTimeout(dim.timer); dim.timer = null; sendDimmer(); }
+        $('dimmer').hidden = true;
+        dim.eid = null;
+        mode = 'dock';
+        renderWidgets();
+    }
+
+    function renderDimmer() {
+        if (!dim.eid) { return; }
+        if (!dim.timer && dim.sent === null) { dim.pct = brightnessPct(dim.eid); }   // follow HA when idle
+        $('dimName').textContent = displayName(dim.eid);
+        $('dimFill').style.width = dim.pct + '%';
+        $('dimValue').textContent = dim.pct ? dim.pct + '%' : 'Off';
+        var chip = document.querySelector('#chips .chip.focused'), box = $('dimmer');
+        if (chip) {
+            var center = chip.getBoundingClientRect ? chipCenter(chip) : 960;
+            box.style.left = Math.max(40, Math.min(1920 - 40 - box.offsetWidth, center - box.offsetWidth / 2)) + 'px';
+        }
+    }
+
+    // Chip centre in stage pixels (the stage may be scaled to fit the screen).
+    function chipCenter(chip) {
+        var r = chip.getBoundingClientRect(), s = $('stage').getBoundingClientRect();
+        var scale = s.width / 1920 || 1;
+        return (r.left + r.width / 2 - s.left) / scale;
+    }
+
+    function stepDimmer(dir) {
+        var p = dim.pct;
+        if (dir > 0) { p = p < 10 ? 10 : Math.min(100, Math.floor(p / 10) * 10 + 10); }
+        else { p = p <= 10 ? (p > 1 ? 1 : 0) : Math.ceil(p / 10) * 10 - 10; }
+        dim.pct = p;
+        var st = ha.states[dim.eid];
+        if (st) {                                       // optimistic, so the chip follows at once
+            st.state = p ? 'on' : 'off';
+            if (p) { st.attributes.brightness = Math.round(p * 2.55); }
+        }
+        clearTimeout(dim.timer);
+        dim.timer = setTimeout(function () { dim.timer = null; sendDimmer(); }, 350);
+        renderWidgets();
+    }
+
+    function sendDimmer() {
+        var eid = dim.eid, p = dim.pct;
+        if (!eid) { return; }
+        dim.sent = p;
+        var req = p ? { domain: 'light', service: 'turn_on', service_data: { brightness_pct: p }, target: { entity_id: eid } }
+            : { domain: 'light', service: 'turn_off', target: { entity_id: eid } };
+        haSend('call_service', req, function (ok, r, err) {
+            dim.sent = null;
+            if (!ok) { toast('Could not dim ' + displayName(eid) + ': ' + ((err && err.message) || 'error'), 4000); }
+        });
     }
 
     function toggleChip(i) {
@@ -756,7 +868,7 @@
                 li.innerHTML = '<span class="box"></span><span class="name"></span><span class="where"></span><span class="val"></span>';
                 li.children[1].textContent = displayName(eid);
                 var kind = kindOf(eid);
-                li.children[2].textContent = (kind === 'button' ? 'Button' : kind === 'camera' ? 'Camera' : 'Sensor') + ' · ' + eid;
+                li.children[2].textContent = (kind === 'button' ? (isDimmable(eid) ? 'Dimmable button' : 'Button') : kind === 'camera' ? 'Camera' : 'Sensor') + ' · ' + eid;
                 li.children[3].textContent = kind === 'camera' ? (f.dim ? '–' : 'Dock tile')
                     : f.value + (f.unit ? (f.unit === '°' ? '°' : ' ' + f.unit) : '');
                 frag.appendChild(li);
@@ -818,33 +930,86 @@
     var tiles = [], focus = 0;
     var row = 'dock';   // dock | chips
     var dockSignature = '';
+    var installedApps = null;   // Tizen ApplicationInformation[] once listed
 
-    function renderDock() { each(tiles, function (t, i) { setFocused(t, row === 'dock' && i === focus); }); }
+    function dockApps() { return cfg.dockApps || ['youtube', 'internet']; }
 
-    // YouTube, Internet, the chosen cameras, then Settings. Rebuilt only when that list changes.
+    function installedInfo(id) {
+        if (!installedApps) { return null; }
+        for (var i = 0; i < installedApps.length; i++) { if (installedApps[i].id === id) { return installedApps[i]; } }
+        return null;
+    }
+
+    // An entry is either a built-in alias (youtube, internet) or a Tizen app ID.
+    function appDef(entry) {
+        if (APPS[entry]) { return APPS[entry]; }
+        var info = installedInfo(entry);
+        return { name: info ? info.name : entry, ids: [entry], glyph: null };
+    }
+
+    function appInfo(entry) {
+        return APPS[entry] ? H.apps.resolve(APPS[entry]) : installedInfo(entry);
+    }
+
+    function renderDock() {
+        each(tiles, function (t, i) { setFocused(t, row === 'dock' && i === focus); });
+        scrollDock();
+    }
+
+    // Keeps the focused tile in view when the dock is wider than the screen.
+    function scrollDock() {
+        var dock = $('dock'), track = $('dockTrack');
+        if (!track || !tiles.length) { return; }
+        var dockW = dock.clientWidth, trackW = track.offsetWidth, x;
+        if (trackW <= dockW) {
+            x = Math.round((dockW - trackW) / 2);
+        } else {
+            var t = tiles[Math.max(0, Math.min(focus, tiles.length - 1))];
+            x = Math.round(dockW / 2 - (t.offsetLeft + t.offsetWidth / 2));
+            x = Math.max(dockW - trackW, Math.min(0, x));
+        }
+        track.style.transform = 'translate3d(' + x + 'px,0,0)';
+        $('dockMoreL').className = 'dockMore' + (x < 0 ? ' show' : '');
+        $('dockMoreR').className = 'dockMore' + (x + trackW > dockW + 1 ? ' show' : '');
+    }
+
+    // Your apps in order, the "+" tile, the chosen cameras, then Settings.
+    // Rebuilt only when that list changes.
     function buildDock() {
-        var items = [DOCK[0], DOCK[1]];
-        each(selectedOf('camera').slice(0, MAX_CAMERAS), function (eid) {
-            items.push({ camera: eid, label: displayName(eid), glyph: 'camera', size: 'big' });
+        var items = [];
+        each(dockApps(), function (entry) {
+            var def = appDef(entry);
+            items.push({ app: entry, label: def.name, glyph: def.glyph });
         });
-        items.push(DOCK[2]);
-        var sig = '';
+        items.push({ action: 'apps', label: 'Edit apps', glyph: 'plus' });
+        each(selectedOf('camera').slice(0, MAX_CAMERAS), function (eid) {
+            items.push({ camera: eid, label: displayName(eid), glyph: 'camera' });
+        });
+        items.push({ action: 'settings', label: 'Settings', glyph: 'gear' });
+        var sig = cfg.icons + '|';
         each(items, function (d) { sig += (d.app || d.action || d.camera) + '=' + d.label + ';'; });
         if (sig === dockSignature) { return; }
         dockSignature = sig;
         var html = '';
         each(items, function (d) {
-            var attr = d.app ? ' data-app="' + d.app + '"' : (d.camera ? ' data-camera="' + esc(d.camera) + '"' : ' data-action="' + d.action + '"');
-            html += '<div class="tile ' + d.size + (d.camera ? ' cam' : '') + '"' + attr + '>' +
-                '<div class="face">' + GLYPHS[d.glyph] + '</div><div class="label">' + esc(d.label) + '</div></div>';
+            var attr = d.app ? ' data-app="' + esc(d.app) + '"' : (d.camera ? ' data-camera="' + esc(d.camera) + '"' : ' data-action="' + d.action + '"');
+            var face = d.glyph ? GLYPHS[d.glyph] : '<span class="glyph mono">' + esc(monogram(d.label)) + '</span>';
+            html += '<div class="tile big' + (d.camera ? ' cam' : '') + (d.action === 'apps' ? ' add' : '') + '"' + attr + '>' +
+                '<div class="face">' + face + '</div><div class="label">' + esc(d.label) + '</div></div>';
         });
-        $('dock').innerHTML = html;
-        $('dock').className = 'n' + items.length;
+        $('dockTrack').innerHTML = html;
+        $('dock').className = items.length >= 5 ? 'compact' : '';
         tiles = document.querySelectorAll('#dock .tile');
         focus = Math.max(0, Math.min(focus, tiles.length - 1));
         renderDock();
         applyIcons();
         refreshThumbs();
+    }
+
+    function monogram(name) {
+        var words = String(name).replace(/[^A-Za-z0-9 ]/g, ' ').replace(/^\s+|\s+$/g, '').split(/\s+/);
+        if (!words[0]) { return '?'; }
+        return (words.length > 1 ? words[0].charAt(0) + words[1].charAt(0) : words[0].slice(0, 2)).toUpperCase();
     }
 
     // ------------------------------------------------------------------ camera snapshots
@@ -1074,6 +1239,8 @@
         openCamera(list[(i + dir + list.length) % list.length]);
     }
 
+    // YouTube and Internet use simple glyphs unless "Tile icons" is set to App icons.
+    // Every other app shows its own icon, or its initials if it has none.
     function applyIcons() {
         each(tiles, function (tile) {
             var key = tile.getAttribute('data-app');
@@ -1081,10 +1248,10 @@
             var face = tile.querySelector('.face');
             var glyph = face.querySelector('.glyph');
             var old = face.querySelector('img');
-            var info = H.apps.resolve(APPS[key]);
+            var info = appInfo(key);
             if (old) { face.removeChild(old); }
             glyph.style.visibility = 'visible';
-            if (cfg.icons !== 'original' || !info || !info.iconPath) { return; }
+            if ((APPS[key] && cfg.icons !== 'original') || !info || !info.iconPath) { return; }
             var img = new Image();
             img.onload = function () { glyph.style.visibility = 'hidden'; };
             img.onerror = function () { if (img.parentNode) { face.removeChild(img); } };
@@ -1097,10 +1264,11 @@
         t.className += ' pressed';
         setTimeout(function () { t.className = t.className.replace(/\s*pressed/g, ''); }, 160);
         if (t.getAttribute('data-action') === 'settings') { openSettings(); return; }
+        if (t.getAttribute('data-action') === 'apps') { openApps(); return; }
         cfg.focus = focus;
         save('focus');
         if (t.getAttribute('data-camera')) { openCamera(t.getAttribute('data-camera')); return; }
-        var app = APPS[t.getAttribute('data-app')];
+        var app = appDef(t.getAttribute('data-app'));
         H.apps.launch(app, function (ok, why) {
             if (ok) { return; }
             toast(why === 'preview mode' ? 'Preview mode: this would open ' + app.name
@@ -1108,9 +1276,168 @@
         });
     }
 
+    // ------------------------------------------------------------------ app picker
+    //
+    // "In the dock" lists your apps in dock order, "Other apps" everything else installed.
+    // OK adds or removes. Right on a dock app picks it up, Up / Down moves it, OK drops it.
+
+    var appsRow = 0, appsItems = [], appsMoving = null, appsReturn = 'dock';
+
+    // The dock entry for an installed app: the built-in alias if it is YouTube or Internet.
+    function entryFor(info) {
+        for (var k in APPS) {
+            if (APPS.hasOwnProperty(k)) {
+                var r = H.apps.resolve(APPS[k]);
+                if (r && r.id === info.id) { return k; }
+            }
+        }
+        return info.id;
+    }
+
+    function openApps() {
+        appsReturn = mode === 'settings' ? 'settings' : 'dock';
+        mode = 'apps';
+        appsRow = 0;
+        appsMoving = null;
+        $('settings').hidden = true;
+        $('apps').hidden = false;
+        renderApps();
+        H.apps.list(function (list) {
+            if (list) { installedApps = list; }
+            if (mode === 'apps') { renderApps(); }
+        });
+    }
+
+    function closeApps() {
+        appsMoving = null;
+        $('apps').hidden = true;
+        if (appsReturn === 'settings') {
+            $('settings').hidden = false;
+            mode = 'settings';
+            renderSettings();
+        } else {
+            mode = 'dock';
+            renderDock();
+        }
+    }
+
+    function renderApps() {
+        var ul = $('appsList'), keep = appsItems[appsRow];
+        var inDock = dockApps();
+        ul.innerHTML = '';
+        appsItems = [];
+        $('appsCount').textContent = inDock.length + (inDock.length === 1 ? ' app' : ' apps') + ' in the dock';
+        $('appsHint').innerHTML = appsMoving
+            ? 'Up / Down to move &middot; OK to drop it here'
+            : 'OK to add or remove &middot; Right on an app in the dock to move it &middot; Back to close';
+
+        function section(title) {
+            var h = document.createElement('li');
+            h.className = 'section';
+            h.textContent = title;
+            ul.appendChild(h);
+        }
+        function item(entry, info, checked, pos) {
+            var li = document.createElement('li');
+            li.className = 'item' + (checked ? ' checked' : '') + (appsMoving === entry ? ' moving' : '');
+            li.setAttribute('data-entry', entry);
+            li.innerHTML = '<span class="box"></span><span class="name"></span><span class="where"></span><span class="val"></span>';
+            li.children[1].textContent = info ? info.name : appDef(entry).name;
+            li.children[2].textContent = info ? info.id : (H.isTV ? 'not installed' : '');
+            li.children[3].textContent = pos ? (appsMoving === entry ? '↕ ' : '') + pos : '';
+            ul.appendChild(li);
+            appsItems.push(entry);
+        }
+
+        section('In the dock');
+        if (!inDock.length) {
+            var none = document.createElement('li');
+            none.className = 'message';
+            none.textContent = 'No apps yet. Add some from the list below.';
+            ul.appendChild(none);
+        }
+        each(inDock, function (entry, i) { item(entry, appInfo(entry), true, String(i + 1)); });
+
+        if (!installedApps) {
+            var msg = document.createElement('li');
+            msg.className = 'message';
+            msg.textContent = H.isTV ? 'Loading installed apps…' : 'Preview mode: the list of installed apps only exists on the TV.';
+            ul.appendChild(msg);
+        } else {
+            var used = {}, others = [];
+            each(inDock, function (entry) { var inf = appInfo(entry); used[inf ? inf.id : entry] = true; });
+            each(installedApps, function (inf) {
+                if (inf.show === false || SELF_ID.test(inf.id) || used[inf.id]) { return; }
+                others.push(inf);
+            });
+            others.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+            section('Other apps');
+            each(others, function (inf) { item(entryFor(inf), inf, false, ''); });
+        }
+
+        var k = appsItems.indexOf(keep);
+        appsRow = k >= 0 ? k : Math.max(0, Math.min(appsRow, appsItems.length - 1));
+        moveApps(0);
+    }
+
+    function moveApps(dir) {
+        var items = $('appsList').querySelectorAll('li.item');
+        if (!items.length) { return; }
+        appsRow = Math.max(0, Math.min(items.length - 1, appsRow + dir));
+        each(items, function (li, i) { setFocused(li, i === appsRow); });
+        var box = $('appsList'), r = items[appsRow];
+        var top = r.offsetTop - box.offsetTop;
+        if (appsRow === 0) { box.scrollTop = 0; }
+        else if (top - 60 < box.scrollTop) { box.scrollTop = top - 60; }
+        else if (top + r.offsetHeight > box.scrollTop + box.clientHeight) { box.scrollTop = top + r.offsetHeight - box.clientHeight; }
+    }
+
+    function saveDockApps(list) {
+        cfg.dockApps = list;
+        save('dockApps');
+        buildDock();
+    }
+
+    function toggleApp() {
+        var entry = appsItems[appsRow];
+        if (!entry) { return; }
+        var list = dockApps().slice(0), i = list.indexOf(entry);
+        if (i >= 0) { list.splice(i, 1); } else { list.push(entry); }
+        saveDockApps(list);
+        renderApps();
+    }
+
+    function shiftApp(dir) {
+        var list = dockApps().slice(0), i = list.indexOf(appsMoving), j = i + dir;
+        if (i < 0 || j < 0 || j >= list.length) { return; }
+        list[i] = list[j];
+        list[j] = appsMoving;
+        appsRow += dir;
+        saveDockApps(list);
+        renderApps();
+    }
+
+    function onAppsKey(k) {
+        if (appsMoving) {
+            if (k === KEY.UP) { shiftApp(-1); }
+            else if (k === KEY.DOWN) { shiftApp(1); }
+            else if (k === KEY.ENTER || k === KEY.LEFT || isBack(k)) { appsMoving = null; renderApps(); }
+            return true;
+        }
+        if (k === KEY.UP) { moveApps(-1); }
+        else if (k === KEY.DOWN) { moveApps(1); }
+        else if (k === KEY.ENTER) { toggleApp(); }
+        else if (k === KEY.RIGHT) {
+            var entry = appsItems[appsRow];
+            if (entry && dockApps().indexOf(entry) >= 0 && dockApps().length > 1) { appsMoving = entry; renderApps(); }
+        } else if (isBack(k)) { closeApps(); }
+        else { return false; }
+        return true;
+    }
+
     // ------------------------------------------------------------------ settings panel
 
-    var mode = 'dock';      // dock | settings | picker | editor | diag | camera
+    var mode = 'dock';      // dock | settings | picker | apps | dim | editor | diag | camera
     var setRow = 0;
     var updateText = '';
 
@@ -1130,6 +1457,7 @@
             if (!ha.connected) { return ha.authFailed ? 'Token rejected' : 'Not connected'; }
             return selectedOf('sensor').length + ' sensors, ' + selectedOf('button').length + ' buttons';
         }
+        if (def.action === 'apps') { return dockApps().length + (dockApps().length === 1 ? ' app' : ' apps'); }
         if (def.action === 'address') { return shortBase(); }
         if (def.action === 'update') { return updateText || 'Check now'; }
         if (def.action === 'diag') { return 'Open'; }
@@ -1157,7 +1485,7 @@
     }
 
     function closeOverlays() {
-        each(['settings', 'picker', 'editor', 'diag'], function (id) { $(id).hidden = true; });
+        each(['settings', 'picker', 'apps', 'editor', 'diag'], function (id) { $(id).hidden = true; });
         var input = $('addr');
         if (input) { input.blur(); }
         mode = 'dock';
@@ -1185,6 +1513,7 @@
 
     function runAction(action) {
         if (action === 'widgets') { openPicker(); }
+        else if (action === 'apps') { openApps(); }
         else if (action === 'address') { openEditor(); }
         else if (action === 'diag') { openDiag(); }
         else if (action === 'update') {
@@ -1310,6 +1639,12 @@
             if (k === KEY.ENTER || k === KEY.IME_DONE) { closeEditor(true); }
             else if (k === KEY.IME_CANCEL || isBack(k)) { closeEditor(false); }
             else { handled = false; } // let the keyboard type
+        } else if (mode === 'dim') {
+            if (k === KEY.LEFT) { stepDimmer(-1); }
+            else if (k === KEY.RIGHT) { stepDimmer(1); }
+            else if (k === KEY.ENTER || k === KEY.DOWN || isBack(k)) { closeDimmer(); }
+        } else if (mode === 'apps') {
+            handled = onAppsKey(k);
         } else if (k === KEY.YELLOW || k === KEY.Y) {
             if (mode === 'diag') { closeOverlays(); } else { openDiag(); }
         } else if (mode === 'dock' && row === 'chips') {
@@ -1318,6 +1653,7 @@
             else if (k === KEY.RIGHT) { chipFocus = Math.min(n - 1, chipFocus + 1); renderWidgets(); }
             else if (k === KEY.DOWN || isBack(k)) { row = 'dock'; renderWidgets(); renderDock(); }
             else if (k === KEY.ENTER) { toggleChip(chipFocus); }
+            else if (k === KEY.UP) { openDimmer(chipFocus); }
             else { handled = false; }
         } else if (mode === 'dock') {
             if (k === KEY.LEFT) { focus = Math.max(0, focus - 1); renderDock(); }
@@ -1387,7 +1723,11 @@
         refreshHaWalls();
         scheduleWalls();
         renderWidgets();
-        H.apps.list(function () { applyIcons(); });
+        H.apps.list(function (list) {
+            if (list) { installedApps = list; }
+            dockSignature = '';      // app names and icons are known now
+            buildDock();
+        });
         H.ready();
         haConnect();
     }
