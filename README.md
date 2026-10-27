@@ -24,6 +24,18 @@ change it there and the TV updates itself.
 |---|---|
 | ![Settings](docs/screenshots/settings.jpg) | ![Widget picker](docs/screenshots/widget-picker.jpg) |
 
+| Library (Jellyfin) | Movie details |
+|---|---|
+| ![Library page](docs/screenshots/library.jpg) | ![Movie details](docs/screenshots/library-details.jpg) |
+
+| Playing a film | Audio and subtitles |
+|---|---|
+| ![Player](docs/screenshots/player.jpg) | ![Audio and subtitle picker](docs/screenshots/player-tracks.jpg) |
+
+| Jellyfin: signed in, with what this TV can play | |
+|---|---|
+| ![Jellyfin settings](docs/screenshots/jellyfin.jpg) | |
+
 *Screenshots use sample data.*
 
 ## Why
@@ -35,7 +47,8 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
 
 ## Features
 
-- **Four pages:** Home, Controls, Weather and Cameras, in that order. Tabs at the top, dots at the bottom and a
+- **Four pages:** Home, Controls, Weather and Cameras, in that order (plus Library when
+  you sign in to Jellyfin). Tabs at the top, dots at the bottom and a
   round arrow at each side show where you are. Press Right on the last item (or Left on the
   first) to reach the arrow, then Right / Left again or OK to slide to the next page.
 - **Home:** clock, wallpaper, up to 15 live sensor cards (5 by 3: weather, room
@@ -54,6 +67,14 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
   OK opens the live stream through Home Assistant's HLS.
 - **Clock and wallpapers:** six built-in nature scenes plus your own photos from Home
   Assistant, resized for the TV automatically.
+- **Library (Jellyfin):** sign in to your Jellyfin server from Settings with Quick Connect
+  or a password and a fifth page appears with your movies: Continue watching, Recently
+  added, and every movie in a poster grid you can sort and jump through by letter. OK opens
+  the details: rating, runtime, when it would end, audio and subtitle languages, and whether
+  this TV plays the file as it is. Haven detects what your TV can play and negotiates every
+  title with Jellyfin accordingly, then plays it full screen with Samsung's own player:
+  resume, seeking, chapters, audio tracks and subtitles, with your progress saved to
+  Jellyfin. TV shows come next.
 - **Auto-discovery:** on first connection Haven picks sensible defaults (weather, a few
   temperatures, solar, humidity, up to 12 lights and all cameras). It finds solar from the
   Energy dashboard, prefers camera sub-streams, and skips diagnostic entities. A picker on
@@ -366,8 +387,75 @@ Rename the entity in HA for a different label.
   fireworks) is drawn once and moved only by the TV's compositor with CSS transforms. No
   canvas, no blur. Fog is the heaviest, so check it with the counter if your TV is older.
   Effects sit behind the cards (fireworks go in front for their short show) and pause on
-  the Cameras page, in the camera player and while Haven is in the background. The Yellow
+  the Cameras page, in the camera player, while a film plays and while Haven is in the background. The Yellow
   panel shows what's running and why.
+
+**Jellyfin:** Settings > **Jellyfin**. Needs Jellyfin 10.9 or newer.
+- **Connecting:** Haven first tries your Home Assistant's address on port 8096, which is
+  where the Jellyfin add-on listens. If your server is elsewhere, type its address once: an IP
+  (`192.168.1.20` becomes `http://192.168.1.20:8096`), or a full URL such as
+  `https://media.example.com/jellyfin`.
+- **Signing in:** *Quick Connect* shows a 6-digit code; enter it in Jellyfin on your phone
+  (your profile > Quick Connect) and the TV signs in by itself. Quick Connect has to be
+  turned on in Jellyfin's dashboard; otherwise sign in with your username and password.
+  Haven keeps the session on the TV, never in `/config/www`, and *Sign out* ends it on the
+  server too.
+- **What this TV can play** is detected at startup (4K panel, HEVC, VP9, AV1, HDR, Dolby,
+  DTS, ...) and sent to Jellyfin with every title, so each TV model gets the right answer:
+  play the file as it is, or convert only what's needed.
+- **Server conversion:** what your server may convert when the TV can't play a file:
+  - *Audio only* (default): video is always passed through untouched; only unsupported
+    audio (DTS, TrueHD) is converted. Light enough for a Raspberry Pi.
+  - *Audio and video*: also converts video (AV1 on older TVs, picture subtitles, anything
+    above the highest resolution). Needs a strong server or a GPU.
+  - *Off*: only files the TV plays as they are.
+  Titles that would need more than you allow say so before playing, instead of failing
+  mid-film.
+- **Highest resolution:** *Auto* uses the panel (4K or 1080p); 1080p or 720p save bandwidth.
+- **Languages:** audio and subtitle preferences come from each user's Jellyfin profile.
+- **Library page:** shown while you're signed in; Settings > Jellyfin > *Library page* >
+  Hide removes it without signing out.
+- The Yellow panel shows the Jellyfin server, user and conversion setting.
+
+**Library:** the fifth page, after Cameras.
+- **Rows:** *Continue watching* (with how much is left), *Recently added*, then *All movies*.
+  Up and Down move between rows, Left and Right along them.
+- **All movies:** a poster grid with sort chips above it: A to Z, Recently added, Year and
+  Unwatched. Watched titles carry a tick. Posters load as you scroll, so large libraries stay
+  quick.
+- **Jumping:** CH + / CH - jump to the next or previous letter in A to Z (a letter rail on the
+  right shows where you are), or three rows at a time in the other sorts.
+- **Details:** OK on a poster. Year, runtime, age rating, star rating, when it would end,
+  genres, the plot, the file's resolution, codecs and languages, and a badge saying how it
+  will play: *Direct play*, *Audio converted* or a warning when it needs more conversion than
+  you allow (with the setting to change). Audio and Subtitles show what Jellyfin will pick
+  from your profile; OK on either opens a list to choose another, and the badge updates (a
+  DTS track turns *Direct play* into *Audio converted*). *More like this* sits underneath.
+  Back closes it.
+
+**Playing:** *Resume*, *Play* or *Play from start* in the details view.
+- **The player:** Samsung's AVPlay, the TV's own video engine, so MKV, HEVC, HDR10 and Dolby
+  audio play as they are. When Jellyfin converts something (only the audio, by default), it
+  sends an HLS stream instead. The bar at the top says which: *Direct play*, *Audio
+  converted* or *Video converted*.
+- **Remote:** OK or Play / Pause pauses. Left / Right jump 10 seconds; hold them and the
+  steps grow to 30 and 60 seconds, and the jump happens when you let go. Fast-forward and
+  rewind jump 30 seconds. CH + / CH - go to the next or previous chapter (5 minutes when the
+  file has none). Up opens audio and subtitles. Back or Stop ends playback.
+- **Audio tracks:** switched by the TV on the spot when the file plays directly; otherwise
+  Jellyfin prepares a new stream from the same moment.
+- **Subtitles:** text subtitles (SRT, ASS, WebVTT, embedded or separate files) are drawn by
+  Haven, with italics kept. Picture subtitles (PGS, DVD) can only be burned into the video,
+  so they need *Audio and video* conversion; with *Audio only* Haven says so and keeps playing.
+- **Progress:** Jellyfin hears where you are every 10 seconds and on pause, seek and stop, so
+  *Continue watching* is current here and in every other Jellyfin app. Watch to the end and
+  the title is marked watched. Leaving Haven (Home button, another source) stops playback and
+  saves the spot; if the TV is simply switched off, the last report (at most 10 s old) counts.
+- **If a file won't play directly** (a TV can misreport what it decodes), Haven asks Jellyfin
+  to repackage it once and says so. Conversions are ended on the server as soon as you stop,
+  so a Raspberry Pi isn't left working.
+- The screensaver stays off while a film plays, and a design update from Home Assistant
+  waits until it ends. The Yellow panel shows how the last title played.
 
 **Other settings:** wallpaper interval, wallpaper source (built-in, Home Assistant or both),
 slow motion (off by default, it costs GPU), weather style, theme, 12 or 24-hour clock, app icons,
@@ -385,7 +473,7 @@ How the TV handles it:
 
 | Situation | What the TV shows |
 |---|---|
-| You saved a change | Haven downloads it and reloads after 20 s without remote presses, or when you return to it |
+| You saved a change | Haven downloads it and reloads after 20 s without remote presses, or when you return to it (never during a film) |
 | The change has an error | The previous working design, plus a message with the error. That version is skipped until you edit again. |
 | Home Assistant is offline | The last working design, instantly. Built-in wallpapers instead of your photos. |
 | First launch with HA offline | The built-in design |
@@ -418,6 +506,13 @@ reinstalling, so it becomes the new fallback.
 | *Not available* when the automation runs | Turn off Autorun Last App |
 | Automation never fires | Trigger on the media_player entity; check History shows off then on |
 | "Home Assistant token rejected" at the top | Wrong `haToken` in `shell-config.js`; fix and reinstall |
+| Jellyfin: "No Jellyfin server answered" | Check the address and port (8096); the TV and the server must be on the same network |
+| Jellyfin: Quick Connect "turned off on this server" | Jellyfin Dashboard > Quick Connect > enable, or sign in with a password |
+| No Library page | Sign in under Settings > Jellyfin, and check *Library page* is set to Show |
+| Library: a title says it needs video conversion | The TV can't play that video format; allow *Audio and video* in Settings > Jellyfin, or use a server with a GPU |
+| Player: "Direct play didn't work on this TV" | The file is repackaged by Jellyfin instead; nothing to do. The Yellow panel shows the reason |
+| Player: long wait at the start of a converted title | The server is converting; on a Pi keep *Server conversion* on *Audio only* |
+| Player: picture subtitles say they need video conversion | They're images (PGS, DVD) and must be burned in; pick a text track, or allow *Audio and video* |
 | A camera shows only snapshots | Yellow panel shows why; use the camera's H.264 sub-stream |
 
 ## Security notes
@@ -427,7 +522,8 @@ reinstalling, so it becomes the new fallback.
   into `/config/www`.
 - Consider a separate non-admin HA user for the TV. It can still read and switch
   everything, but it can't change HA's configuration.
-- If the TV is lost or sold, delete the token in HA.
+- If the TV is lost or sold, delete the token in HA, and sign the TV out in Jellyfin
+  (Dashboard > Devices) if you used the Library.
 - Everything in `/config/www` can be fetched without logging in by anyone who can reach
   your HA, including from the internet if HA is exposed. Only the resized wallpapers and
   the design are there, never the token.
