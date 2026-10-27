@@ -50,6 +50,8 @@
         { key: 'source', label: 'Wallpapers',
           options: [['both', 'Built-in + Home Assistant'], ['ha', 'Home Assistant'], ['builtin', 'Built-in']] },
         { key: 'motion', label: 'Slow wallpaper motion', options: [[false, 'Off (fastest)'], [true, 'On']] },
+        { key: 'season', label: 'Seasonal effects', options: [] },     // filled in by fxOptions()
+        { key: 'wxStyle', label: 'Weather style', options: [['a', 'Today and week'], ['b', 'Next 24 hours and week']] },
         { key: 'theme', label: 'Theme', options: [['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto (light by day)']] },
         { key: 'clock24', label: 'Clock', options: [[true, '24-hour'], [false, '12-hour']] },
         { key: 'icons', label: 'Tile icons', options: [['simple', 'Simple'], ['original', 'App icons']] },
@@ -63,7 +65,7 @@
 
     // widgets: entity IDs in display order; null = never chosen, so suggestions get picked.
     // dockApps: app IDs in dock order; null = never chosen, so YouTube and Internet are used.
-    var DEFAULTS = { interval: 60, source: 'both', motion: false, theme: 'dark', clock24: true,
+    var DEFAULTS = { interval: 60, source: 'both', motion: false, season: 'auto', wxStyle: 'a', theme: 'dark', clock24: true,
         icons: 'simple', captions: true, focus: 0, widgets: null, dockApps: null };
     var cfg = {};
     (function () {
@@ -99,6 +101,8 @@
         $('stage').innerHTML =
             '<div id="bg"><div class="wall" id="wallA"></div><div class="wall" id="wallB"></div></div>' +
             '<div id="shade"></div>' +
+            '<div id="fxTint"></div>' +
+            '<div id="fx"></div><style id="fxStyle"></style>' +
             '<div id="veil"></div>' +
             '<div id="pages">' +
                 '<section class="page" id="pageHome">' +
@@ -111,6 +115,7 @@
                     '<section id="ctlArea"><div id="ctlTrack"></div></section>' +
                     '<div id="ctlMoreU" class="dockMore vmore">&lsaquo;</div><div id="ctlMoreD" class="dockMore vmore">&rsaquo;</div>' +
                 '</section>' +
+                '<section class="page" id="pageWeather"><section id="wxArea"></section></section>' +     // pages in PAGES order
                 '<section class="page" id="pageCameras"><section id="camArea"></section></section>' +
             '</div>' +
             '<div id="tabs"></div>' +
@@ -142,7 +147,9 @@
             '<section id="diag" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Installed apps and status</h2><div id="diagStatus"></div><ul id="diagList"></ul>' +
                 '<p class="hint">Up / Down to scroll &middot; Back or Yellow to close</p></div></section>' +
-            '<div id="toast"></div>';
+            '<div id="toast"></div>' +
+            '<div id="fps"></div>' +
+            '<div id="countdown"></div>';
     }
 
     // ------------------------------------------------------------------ theme
@@ -176,8 +183,418 @@
             : ((h + 11) % 12 + 1) + ':' + pad(d.getMinutes()) + (h < 12 ? ' AM' : ' PM');
         $('date').textContent = DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
         applyTheme();
+        updateFx();
         clearTimeout(clockTimer);
         clockTimer = setTimeout(tickClock, 60500 - d.getSeconds() * 1000 - d.getMilliseconds());
+    }
+
+    // ------------------------------------------------------------------ seasonal effects
+    //
+    // Weather and holiday effects: snow, rain, storms, fog, stars, golden hour, autumn leaves,
+    // Halloween, Valentine's, St. Patrick's, spring blossoms, fireworks, birthdays.
+    //
+    // Every particle is a small element drawn once and moved only by CSS keyframes (transform and
+    // opacity). The TV's compositor animates those by itself, so the effect keeps running evenly while
+    // the page's JavaScript is busy, and each particle costs only a few pixels. No canvas, no blur
+    // filters, no JavaScript animation loop. Keyframes are generated for the effect in use only.
+    // Everything sits over the wallpaper and behind the cards, and is switched off on the Cameras page,
+    // in the camera player and while Haven is in the background.
+    //
+    // What runs, highest first: fireworks (New Year, Fourth of July evening) > a birthday in a Home
+    // Assistant calendar > real weather (snow, sleet, rain, storm, fog) > holidays > seasons >
+    // clear-night stars. Wind from the weather entity blows falling things sideways, and a warm tint
+    // fades in around sunset.
+
+    var FX_LABEL = {
+        snow: 'Snow', christmas: 'Christmas snow', sleet: 'Sleet', rain: 'Rain', pouring: 'Heavy rain',
+        storm: 'Thunderstorm', fog: 'Fog', stars: 'Clear night', golden: 'Golden hour', windy: 'Windy (leaves)',
+        autumn: 'Autumn leaves', thanksgiving: 'Thanksgiving', halloween: 'Halloween', valentine: 'Valentine\'s Day',
+        stpatrick: 'St. Patrick\'s Day', spring: 'Spring blossoms', newyear: 'New Year\'s fireworks',
+        july4: 'Fourth of July', birthday: 'Birthday'
+    };
+    var FX_PREVIEWS = ['snow', 'sleet', 'rain', 'pouring', 'storm', 'fog', 'stars', 'golden', 'windy', 'autumn',
+        'thanksgiving', 'halloween', 'valentine', 'stpatrick', 'spring', 'newyear', 'july4', 'birthday'];
+    var FX_WEATHER = { snowy: 'snow', 'snowy-rainy': 'sleet', hail: 'sleet', rainy: 'rain', pouring: 'pouring',
+        'lightning-rainy': 'storm', lightning: 'storm', fog: 'fog' };
+    var FX_STOPS = 24;
+
+    each(SETTINGS_DEF, function (def) { if (def.key === 'season') { def.options = fxOptions(); } });
+    if (cfg.season === 'on') { cfg.season = 'p:snow'; save('season'); }   // the first test build's "Snow"
+
+    var fx = { sig: '', on: false, name: null, why: '', count: 0, plan: null, fps: null, kf: 0, bdayToast: '' };
+
+    // The Settings options: three modes, a test mode with a frame-rate counter, Off, then a preview of
+    // every effect (previews also show the counter).
+    function fxOptions() {
+        var o = [['auto', 'Holidays, seasons and weather'], ['holidays', 'Holidays and seasons'], ['weather', 'Weather only'],
+            ['fps', 'All + frame rate'], ['off', 'Off']];
+        each(FX_PREVIEWS, function (n) { o.push(['p:' + n, 'Preview: ' + FX_LABEL[n]]); });
+        return o;
+    }
+
+    // A weather entity: the one on Home if there is one, otherwise the first one in HA.
+    function weatherEid() {
+        var list = selected(), i;
+        for (i = 0; i < list.length; i++) { if (domainOf(list[i]) === 'weather') { return list[i]; } }
+        for (i = 0; i < ha.all.length; i++) { if (domainOf(ha.all[i].entity_id) === 'weather') { return ha.all[i].entity_id; } }
+        return null;
+    }
+
+    function calendarEids() {
+        var out = [];
+        each(ha.all, function (s) { if (domainOf(s.entity_id) === 'calendar' && out.length < 12) { out.push(s.entity_id); } });
+        return out;
+    }
+
+    // 4th Thursday of November
+    function thanksgivingDay(year) { return 1 + (4 - new Date(year, 10, 1).getDay() + 7) % 7 + 21; }
+
+    function calendarFx(d) {
+        var m = d.getMonth() + 1, day = d.getDate(), h = d.getHours(), min = d.getMinutes(), md = m * 100 + day;
+        if ((md === 1231 && h === 23 && min >= 50) || (md === 101 && h === 0 && min < 30)) { return 'newyear'; }
+        if (md === 704) { return h >= 20 ? 'july4' : null; }
+        if (md === 214) { return 'valentine'; }
+        if (md === 317) { return 'stpatrick'; }
+        if (md >= 1024 && md <= 1031) { return 'halloween'; }
+        if (m === 11 && day === thanksgivingDay(d.getFullYear())) { return 'thanksgiving'; }
+        if (md >= 1201 || md <= 106) { return 'christmas'; }
+        if (md >= 922 && md <= 1130) { return 'autumn'; }
+        if (md >= 320 && md <= 515) { return 'spring'; }
+        return null;
+    }
+
+    // An all-day (or current) calendar event with "birthday" in its title.
+    function birthdayEvent() {
+        var cals = calendarEids();
+        for (var i = 0; i < cals.length; i++) {
+            var st = ha.states[cals[i]], msg = st && st.attributes && st.attributes.message;
+            if (st && st.state === 'on' && /birthday|bday/i.test(msg || '')) { return String(msg); }
+        }
+        return null;
+    }
+
+    // Wind from the weather entity: level 0 calm, 1 breezy, 2 windy; dir +1 blows to the right.
+    function windNow() {
+        var w = weatherEid(), st = w && ha.states[w], a = (st && st.attributes) || {};
+        var unit = String(a.wind_speed_unit || 'km/h'), v = parseFloat(a.wind_speed);
+        var kmh = isNaN(v) ? 0 : unit === 'mph' ? v * 1.609 : unit === 'm/s' ? v * 3.6 : unit === 'kn' ? v * 1.852 : v;
+        var level = kmh >= 35 ? 2 : kmh >= 15 ? 1 : 0;
+        if (st && /^windy/.test(st.state)) { level = Math.max(level, 2); }
+        var bearing = parseFloat(a.wind_bearing);          // where the wind comes FROM, degrees from north
+        var dir = isNaN(bearing) ? 1 : (-Math.sin(bearing * Math.PI / 180) < 0 ? -1 : 1);
+        return { level: level, dir: dir };
+    }
+
+    // Sunset glow: the sun just above or below the horizon in the evening, and not overcast.
+    function goldenHour(weatherState) {
+        var sun = ha.states['sun.sun'], a = sun && sun.attributes;
+        if (!a || typeof a.elevation !== 'number' || a.rising) { return false; }
+        return a.elevation > -2 && a.elevation < 8 && !FX_WEATHER[weatherState] && weatherState !== 'cloudy';
+    }
+
+    function fxPlanNow() {
+        var mode = cfg.season === 'on' ? 'p:snow' : cfg.season, calm = { level: 0, dir: 1 };
+        var plan = { name: null, why: '', wind: calm, tint: false, meter: mode === 'fps' || mode.indexOf('p:') === 0 };
+        if (mode === 'off') { return plan; }
+        if (mode.indexOf('p:') === 0) {
+            var p = mode.slice(2);
+            plan.why = 'preview';
+            if (p === 'golden') { plan.tint = true; return plan; }
+            plan.name = p === 'windy' ? 'autumn' : p;
+            if (p === 'windy') { plan.wind = { level: 2, dir: 1 }; }
+            return plan;
+        }
+        var useCal = mode !== 'weather', useWx = mode !== 'holidays';
+        var w = weatherEid(), wstate = w && ha.states[w] ? ha.states[w].state : '';
+        var cal = useCal ? calendarFx(new Date()) : null;
+        var wx = useWx ? FX_WEATHER[wstate] || null : null;
+        if (cal === 'newyear' || cal === 'july4') { plan.name = cal; plan.why = 'calendar'; }
+        else if (useCal && birthdayEvent()) { plan.name = 'birthday'; plan.why = 'calendar'; }
+        else if (wx) { plan.name = wx; plan.why = 'weather'; }
+        else if (cal) { plan.name = cal; plan.why = 'calendar'; }
+        else if (useWx && wstate === 'clear-night') { plan.name = 'stars'; plan.why = 'weather'; }
+        plan.wind = useWx ? windNow() : calm;
+        plan.tint = useWx && goldenHour(wstate);
+        return plan;
+    }
+
+    // ---------------------------------------------------- keyframes
+
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+    function n1(v) { return (Math.round(v * 10) / 10).toString(); }
+
+    function kfName() { fx.kf++; return 'fx' + fx.kf; }
+
+    // falling: sine sway, wind drift, optional spin and a confetti-style flip
+    function kfFall(css, amp, waves, drift, rot, flip) {
+        var name = kfName(), s = '@keyframes ' + name + '{';
+        for (var k = 0; k <= FX_STOPS; k++) {
+            var t = k / FX_STOPS, x = drift * t + amp * Math.sin(2 * Math.PI * waves * t);
+            s += (t * 100).toFixed(2) + '%{transform:translate3d(' + n1(x) + 'px,' + Math.round(-70 + 1200 * t) + 'px,0)' +
+                (rot ? ' rotate(' + Math.round(rot * t) + 'deg)' : '') +
+                (flip ? ' scale(' + Math.cos(2 * Math.PI * flip * t).toFixed(2) + ',1)' : '') + '}';
+        }
+        css.push(s + '}');
+        return name;
+    }
+
+    // rising (embers, hearts): fades in at the bottom and out near the top
+    function kfRise(css, amp, waves, op) {
+        var name = kfName(), s = '@keyframes ' + name + '{';
+        for (var k = 0; k <= FX_STOPS; k++) {
+            var t = k / FX_STOPS, o = t < 0.12 ? op * t / 0.12 : t > 0.7 ? op * (1 - t) / 0.3 : op;
+            s += (t * 100).toFixed(2) + '%{transform:translate3d(' + n1(amp * Math.sin(2 * Math.PI * waves * t)) + 'px,' +
+                Math.round(1150 - 1220 * t) + 'px,0);opacity:' + o.toFixed(2) + '}';
+        }
+        css.push(s + '}');
+        return name;
+    }
+
+    // rain: a straight slanted line
+    function kfRain(css, angle) {
+        var name = kfName(), dx = Math.round(Math.tan(angle * Math.PI / 180) * 1260);
+        css.push('@keyframes ' + name + '{0%{transform:translate3d(0,-110px,0) rotate(' + (-angle) + 'deg)}' +
+            '100%{transform:translate3d(' + dx + 'px,1150px,0) rotate(' + (-angle) + 'deg)}}');
+        return name;
+    }
+
+    // bats: cross the screen in the first part of the cycle, then wait off screen
+    function kfGlide(css, dir, bob) {
+        var name = kfName(), s = '@keyframes ' + name + '{', STEPS = 16, from = dir > 0 ? -160 : 2080, to = dir > 0 ? 2080 : -160;
+        for (var k = 0; k <= STEPS; k++) {
+            var t = k / STEPS;
+            s += (t * 45).toFixed(2) + '%{transform:translate3d(' + Math.round(from + (to - from) * t) + 'px,' +
+                n1(bob * Math.sin(2 * Math.PI * 2 * t)) + 'px,0)' + (dir < 0 ? ' scale(-1,1)' : '') + '}';
+        }
+        css.push(s + '100%{transform:translate3d(' + to + 'px,0,0)}}');
+        return name;
+    }
+
+    // fireworks: one keyframe per spark direction, shared by every burst
+    function kfSparks(css, count) {
+        var names = [];
+        for (var i = 0; i < count; i++) {
+            var name = kfName(), a = 2 * Math.PI * i / count, r = 170, cx = Math.cos(a), cy = Math.sin(a);
+            css.push('@keyframes ' + name + '{0%{transform:translate3d(0,0,0) scale(.5);opacity:0}' +
+                '3%{transform:translate3d(' + n1(cx * 14) + 'px,' + n1(cy * 14) + 'px,0) scale(1);opacity:1}' +
+                '28%{transform:translate3d(' + n1(cx * r) + 'px,' + n1(cy * r + 34) + 'px,0) scale(.9);opacity:.9}' +
+                '40%{transform:translate3d(' + n1(cx * r * 1.12) + 'px,' + n1(cy * r * 1.12 + 110) + 'px,0) scale(.6);opacity:0}' +
+                '100%{transform:translate3d(' + n1(cx * r * 1.12) + 'px,' + n1(cy * r * 1.12 + 110) + 'px,0);opacity:0}}');
+            names.push(name);
+        }
+        return names;
+    }
+
+    // ---------------------------------------------------- building an effect
+
+    function particle(cls, style, anim) {
+        return '<i class="fxp ' + cls + '" style="' + style + ';animation:' + anim + '"></i>';
+    }
+
+    // n particles that fall with sway (and optional spin); returns html
+    function fallers(css, n, cls, size, dur, opacity, sway, drift, spin, colors, flip, aspect) {
+        var paths = [], html = '';
+        for (var v = 0; v < 3; v++) {
+            var amp = sway[0] + (sway[1] - sway[0]) * v / 2, rot = spin ? (v === 1 ? -1 : 1) * spin : 0;
+            paths.push(kfFall(css, amp, [2, 3, 2][v], drift, rot, flip));
+        }
+        for (var i = 0; i < n; i++) {
+            var w = Math.round(rnd(size[0], size[1])), d = rnd(dur[1], dur[0]);
+            var bg = colors ? ';background-color:' + colors[i % colors.length] : '';
+            html += particle(cls, 'left:' + rnd(-4, 100).toFixed(2) + '%;width:' + w + 'px;height:' + Math.round(w * (aspect || 1)) +
+                'px;opacity:' + opacity + bg, paths[i % 3] + ' ' + n1(d) + 's linear -' + n1(rnd(0, d)) + 's infinite');
+        }
+        return html;
+    }
+
+    function risers(css, n, cls, size, dur, opacity, sway) {
+        var paths = [], html = '';
+        for (var v = 0; v < 3; v++) { paths.push(kfRise(css, sway * (0.6 + 0.4 * v), [1, 2, 1][v], opacity)); }
+        for (var i = 0; i < n; i++) {
+            var w = Math.round(rnd(size[0], size[1])), d = rnd(dur[1], dur[0]);
+            html += particle(cls + (cls === 'heart' ? ' h' + (i % 3) : ''), 'left:' + rnd(0, 98).toFixed(2) + '%;width:' + w + 'px;height:' + w + 'px',
+                paths[i % 3] + ' ' + n1(d) + 's linear -' + n1(rnd(0, d)) + 's infinite');
+        }
+        return html;
+    }
+
+    function rainHtml(css, n, dur, opacity, wind) {
+        var angle = [4, 10, 20][wind.level] * wind.dir, path = kfRain(css, angle), html = '';
+        for (var i = 0; i < n; i++) {
+            var d = rnd(dur[1], dur[0]), len = Math.round(rnd(38, 72));
+            html += particle('drop', 'left:' + rnd(-12, 104).toFixed(2) + '%;height:' + len + 'px;opacity:' + n1(opacity * rnd(0.6, 1)),
+                path + ' ' + d.toFixed(2) + 's linear -' + (d * rnd(0, 1)).toFixed(2) + 's infinite');
+        }
+        return html;
+    }
+
+    function snowHtml(css, scale, drift) {
+        var html = '';
+        each([[30, 5, 8, 24, 17, 0.55], [24, 9, 13, 16, 12, 0.75], [12, 15, 21, 11, 8, 0.9]], function (L, i) {
+            html += fallers(css, Math.round(L[0] * scale), 'flake', [L[1], L[2]], [L[3], L[4]], L[5], [10 + 8 * i, 24 + 12 * i], drift, 0);
+        });
+        return html;
+    }
+
+    function fireworksHtml(css, colors) {
+        var sparks = kfSparks(css, 24), html = '';
+        for (var b = 0; b < 4; b++) {
+            var cycle = rnd(3.4, 5.8), delay = rnd(0, cycle);
+            html += '<div class="burst" style="left:' + (8 + b * 22 + rnd(0, 14)).toFixed(1) + '%;top:' + rnd(14, 50).toFixed(1) + '%;--c:' + colors[b % colors.length] + '">';
+            for (var s = 0; s < sparks.length; s++) {
+                html += particle('spark', 'left:0;top:0', sparks[s] + ' ' + n1(cycle) + 's ease-out -' + n1(delay) + 's infinite');
+            }
+            html += '</div>';
+        }
+        return html;
+    }
+
+    var LEAVES = ['#d9622b', '#e8a33d', '#b8452a', '#f0c75e', '#8f3b1b', '#c97b2a'];
+    var CONFETTI = ['#ff5c8a', '#ffd36b', '#5cc8ff', '#7be07b', '#c69bff', '#ff9f43'];
+
+    // Builds the particles for one effect; returns [html, count].
+    function fxBuild(name, wind) {
+        var css = [], html = '', drift = [0, 150, 380][wind.level] * wind.dir;
+        fx.kf = 0;
+        if (name === 'snow' || name === 'christmas') { html = snowHtml(css, 1, drift); }
+        else if (name === 'sleet') { html = snowHtml(css, 0.5, drift) + rainHtml(css, 40, [1.1, 0.8], 0.35, wind); }
+        else if (name === 'rain') { html = rainHtml(css, 70, [1.1, 0.7], 0.45, wind); }
+        else if (name === 'pouring') { html = rainHtml(css, 115, [0.8, 0.5], 0.55, wind); }
+        else if (name === 'storm') {
+            html = rainHtml(css, 100, [0.8, 0.5], 0.55, wind) +
+                '<i class="flash" style="animation:fxflash ' + n1(rnd(11, 16)) + 's linear -' + n1(rnd(2, 6)) + 's infinite"></i>';
+        } else if (name === 'fog') {
+            each([[420, 70], [700, 55]], function (b, i) {          // two wide bands: fog is the heaviest effect
+                html += '<i class="fogband" style="top:' + b[0] + 'px;animation:fxfog ' + b[1] + 's ease-in-out -' + (i * 13) +
+                    's infinite alternate"></i>';
+            });
+        } else if (name === 'stars') {
+            for (var i = 0; i < 45; i++) {
+                var sz = Math.round(rnd(3, 5)), d = rnd(2.2, 5.5);
+                html += particle('star', 'left:' + rnd(1, 99).toFixed(2) + '%;top:' + rnd(1, 40).toFixed(2) + '%;width:' + sz + 'px;height:' + sz + 'px',
+                    'fxtwinkle ' + n1(d) + 's ease-in-out -' + n1(rnd(0, d)) + 's infinite alternate');
+            }
+            html += particle('shoot', 'left:72%;top:8%', 'fxshoot 23s linear -4s infinite') +
+                particle('shoot', 'left:38%;top:4%', 'fxshoot 37s linear -21s infinite');
+        } else if (name === 'autumn' || name === 'thanksgiving') {
+            html = fallers(css, name === 'thanksgiving' ? 38 : 24, 'leaf', [18, 34], [15, 9], 0.92, [30, 70], drift, 540, LEAVES);
+        } else if (name === 'halloween') {
+            for (var b = 0; b < 6; b++) {
+                var dir = b % 2 ? -1 : 1, cyc = rnd(14, 26), size = Math.round(rnd(56, 96));
+                html += '<i class="fxp bat" style="top:' + rnd(6, 46).toFixed(1) + '%;width:' + size + 'px;height:' + Math.round(size * 0.75) +
+                    'px;animation:' + kfGlide(css, dir, rnd(16, 40)) + ' ' + n1(cyc) + 's linear -' + n1(rnd(0, cyc)) + 's infinite"><b></b></i>';
+            }
+            html += risers(css, 30, 'ember', [9, 16], [16, 10], 0.95, 26);
+        } else if (name === 'valentine') { html = risers(css, 22, 'heart', [18, 34], [17, 11], 0.85, 40); }
+        else if (name === 'stpatrick') { html = fallers(css, 22, 'clover', [20, 34], [16, 10], 0.9, [20, 50], drift, 300); }
+        else if (name === 'spring') { html = fallers(css, 30, 'petal', [12, 22], [17, 11], 0.9, [40, 90], drift, 420); }
+        else if (name === 'newyear') { html = fireworksHtml(css, ['#ffd36b', '#ffffff', '#ff7ab6', '#7fe3ff', '#c69bff']); }
+        else if (name === 'july4') { html = fireworksHtml(css, ['#ff4b4b', '#ffffff', '#4b7bff', '#ff4b4b', '#ffffff']); }
+        else if (name === 'birthday') { html = fallers(css, 50, 'confetti', [8, 12], [11, 7], 0.95, [20, 50], drift, 720, CONFETTI, 3, 1.6); }
+        $('fxStyle').textContent = css.join('\n');
+        $('fx').className = name === 'newyear' || name === 'july4' ? 'top' : '';   // fireworks show above the cards
+        $('fx').innerHTML = html;
+        return $('fx').querySelectorAll('.fxp, .flash, .fogband').length;
+    }
+
+    // Called whenever something that affects the effects changes; cheap when nothing does.
+    function updateFx() {
+        var plan = fxPlanNow(), visible = !document.hidden && mode !== 'camera' && page !== P_CAM;
+        fx.plan = plan;
+        var sig = plan.name ? plan.name + '|' + plan.wind.level + '|' + plan.wind.dir : '';
+        if (sig !== fx.sig) {
+            fx.sig = sig;
+            fx.name = plan.name;
+            fx.why = plan.why;
+            fx.count = plan.name ? fxBuild(plan.name, plan.wind) : 0;
+            if (!plan.name) { $('fx').innerHTML = ''; $('fxStyle').textContent = ''; }
+            if (plan.name === 'birthday') { birthdayToast(); }
+        }
+        var show = !!plan.name && visible;
+        if (show !== fx.on) {
+            fx.on = show;
+            $('fx').style.display = show ? 'block' : 'none';   // display:none stops the animations and frees the layers
+        }
+        $('fxTint').className = plan.tint && visible ? 'on' : '';
+        var meter = plan.meter && visible;
+        if (meter && !fx.fps) { startFps(); }
+        else if (!meter && fx.fps) { stopFps(); }
+        checkCountdown(false);
+    }
+
+    function birthdayToast() {
+        var msg = fx.plan && fx.plan.why === 'preview' ? 'Happy birthday!' : birthdayEvent(), today = new Date().toDateString();
+        if (!msg || fx.bdayToast === today + msg) { return; }
+        fx.bdayToast = today + msg;
+        toast(msg.length > 60 ? msg.slice(0, 58) + '...' : msg, 6000);
+    }
+
+    // ---------------------------------------------------- New Year countdown (last minute of the year)
+
+    var countdown = { timer: null, end: 0 };
+
+    function checkCountdown(demo) {
+        var d = new Date();
+        var live = cfg.season !== 'off' && cfg.season !== 'weather' &&
+            d.getMonth() === 11 && d.getDate() === 31 && d.getHours() === 23 && d.getMinutes() === 59;
+        if (countdown.timer || !(live || demo)) { return; }
+        countdown.end = demo ? Date.now() + 10000 : new Date(d.getFullYear() + 1, 0, 1).getTime();
+        tickCountdown();
+        countdown.timer = setInterval(tickCountdown, 250);
+    }
+
+    function tickCountdown() {
+        var el = $('countdown'), left = Math.ceil((countdown.end - Date.now()) / 1000);
+        var hidden = document.hidden || mode === 'camera';
+        if (left > 0) {
+            el.textContent = String(left);
+            el.className = hidden ? '' : 'on' + (left <= 10 ? ' big' : '');
+        } else if (left > -8) {
+            el.textContent = 'Happy New Year!';
+            el.className = hidden ? '' : 'on cheer';
+        } else {
+            el.className = '';
+            clearInterval(countdown.timer);
+            countdown.timer = null;
+        }
+    }
+
+    // ---------------------------------------------------- frame-rate counter (testing on the TV)
+
+    function startFps() {
+        var el = $('fps'), f = { n: 0, t0: 0, hist: [] };
+        fx.fps = f;
+        el.textContent = 'Measuring...';
+        el.style.display = 'block';
+        function frame(t) {
+            if (fx.fps !== f) { return; }
+            if (!f.t0) { f.t0 = t; }
+            f.n++;
+            if (t - f.t0 >= 1000) {
+                var v = Math.round(f.n * 1000 / (t - f.t0));
+                f.hist.push(v);
+                if (f.hist.length > 10) { f.hist.shift(); }
+                el.textContent = (fx.on ? FX_LABEL[fx.name] : fx.plan && fx.plan.tint ? 'Golden hour' : 'No effect now') +
+                    ' · ' + v + ' fps · lowest ' + Math.min.apply(null, f.hist) + ' (10 s)';
+                f.n = 0;
+                f.t0 = t;
+            }
+            window.requestAnimationFrame(frame);
+        }
+        window.requestAnimationFrame(frame);
+    }
+
+    function stopFps() {
+        fx.fps = null;
+        $('fps').style.display = 'none';
+    }
+
+    function fxStatus() {
+        var p = fx.plan;
+        if (cfg.season === 'off') { return 'off'; }
+        if (fx.on) { return FX_LABEL[fx.name] + ' (' + fx.why + ') · ' + fx.count + ' particles' + (p && p.tint ? ' · golden hour' : ''); }
+        if (p && p.name) { return FX_LABEL[p.name] + ', paused here'; }
+        return p && p.tint ? 'golden hour' : 'nothing right now';
     }
 
     // ------------------------------------------------------------------ wallpapers
@@ -367,6 +784,7 @@
             ha.ws = null;
             ha.connected = false;
             ha.subId = null;
+            wx.subDaily = wx.subHourly = null;        // forecast subscriptions end with the connection
             var pend = ha.pending;
             ha.pending = {};
             each(keys(pend), function (id) { pend[id](false, null, { message: 'connection closed' }); });
@@ -407,6 +825,8 @@
             renderWidgets();
         } else if (msg.type === 'event' && msg.id === ha.subId) {
             haApplyEvent(msg.event || {});
+        } else if (msg.type === 'event' && msg.id && (msg.id === wx.subDaily || msg.id === wx.subHourly)) {
+            wxEvent(msg);
         } else if (msg.type === 'result' && ha.pending[msg.id]) {
             var cb = ha.pending[msg.id];
             delete ha.pending[msg.id];
@@ -528,6 +948,9 @@
         if (!ha.connected) { return; }
         var ids = selected().slice(0);
         if (cfg.theme === 'auto' && ids.indexOf('sun.sun') < 0) { ids.push('sun.sun'); }
+        // the Weather page and the effects follow the weather entity and the sun; effects also read calendars
+        each([weatherEid(), 'sun.sun'].concat(cfg.season !== 'off' ? calendarEids() : []), function (e) { if (e && ids.indexOf(e) < 0) { ids.push(e); } });
+        wxSubscribe();
         if (ha.subId) {
             haSend('unsubscribe_events', { subscription: ha.subId });
             ha.subId = null;
@@ -561,6 +984,7 @@
         if (ev.r) { each(ev.r, function (gone) { delete ha.states[gone]; }); }
         renderWidgets();
         if (ev.a && selectedOf('camera').length) { refreshCamStills(); }
+        if (cfg.season !== 'off') { updateFx(); }
         if (cfg.theme === 'auto') { applyTheme(); }
         saveCacheSoon();
     }
@@ -660,10 +1084,11 @@
     // how many there are). Right on the last item, Left on the first, or OK on the round
     // arrows at the screen edges, slides to the next page.
 
-    var PAGES = ['Home', 'Controls', 'Cameras'];
+    var PAGES = ['Home', 'Controls', 'Weather', 'Cameras'];
+    var P_CTL = 1, P_WX = 2, P_CAM = 3;           // page numbers by name, so the order is set in one place
     var page = 0;
-    var sel = ['dock', null, null];           // focus per page: 'dock', 'edge:l', 'edge:r', 'eid:<id>', 'cam:<id>'
-    var selBeforeEdge = [null, null, null];
+    var sel = ['dock', null, null, null];     // focus per page: 'dock', 'edge:l', 'edge:r', 'eid:<id>', 'cam:<id>', 'day:<n>'
+    var selBeforeEdge = [null, null, null, null];
     var pageTimer = null;
 
     function hasSide(p, side) { return side === 'l' ? p > 0 : p < PAGES.length - 1; }
@@ -688,6 +1113,7 @@
         renderChrome();
         renderWidgets();
         refreshCamStills();
+        updateFx();
     }
 
     // Tabs, dots, edge arrows and the darker veil behind Controls and Cameras.
@@ -707,7 +1133,8 @@
     // Focusable items of a page, in the page's own coordinates (unaffected by scrolling).
     function itemsOf(p) {
         var out = [];
-        var nodes = p === 1 ? document.querySelectorAll('#ctlTrack .ctl') : p === 2 ? document.querySelectorAll('#camArea .camtile') : [];
+        var nodes = p === P_CTL ? document.querySelectorAll('#ctlTrack .ctl') : p === P_CAM ? document.querySelectorAll('#camArea .camtile')
+            : p === P_WX ? document.querySelectorAll('#wxArea .wday') : [];
         each(nodes, function (el) {
             out.push({ key: el.getAttribute('data-key'), el: el, x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
         });
@@ -726,8 +1153,10 @@
         $('edgeL').className = 'edge l' + (hasSide(page, 'l') ? '' : ' off') + (s === 'edge:l' ? ' focused' : '');
         $('edgeR').className = 'edge r' + (hasSide(page, 'r') ? '' : ' off') + (s === 'edge:r' ? ' focused' : '');
         each(document.querySelectorAll('#ctlTrack .ctl'), function (el) { setFocused(el, page === 1 && el.getAttribute('data-key') === sel[1]); });
-        each(document.querySelectorAll('#camArea .camtile'), function (el) { setFocused(el, page === 2 && el.getAttribute('data-key') === sel[2]); });
+        each(document.querySelectorAll('#camArea .camtile'), function (el) { setFocused(el, page === P_CAM && el.getAttribute('data-key') === sel[P_CAM]); });
+        each(document.querySelectorAll('#wxArea .wday'), function (el) { setFocused(el, page === P_WX && el.getAttribute('data-key') === sel[P_WX]); });
         if (page === 1) { scrollControls(); maybeDimHint(); }
+        if (page === P_WX) { wxFollowFocus(); }
     }
 
     function toEdge(side) {
@@ -796,7 +1225,7 @@
         else if (page === 1 && k === KEY.ENTER) { if (s.indexOf('eid:') === 0) { toggleEid(s.slice(4)); } }
         else if (page === 1 && (k === KEY.CH_UP || k === KEY.PAGE_UP)) { nudgeBrightness(1); }
         else if (page === 1 && (k === KEY.CH_DOWN || k === KEY.PAGE_DOWN)) { nudgeBrightness(-1); }
-        else if (page === 2 && k === KEY.ENTER) { if (s.indexOf('cam:') === 0) { openCamera(s.slice(4)); } }
+        else if (page === P_CAM && k === KEY.ENTER) { if (s.indexOf('cam:') === 0) { openCamera(s.slice(4)); } }
         else { return false; }
         return true;
     }
@@ -816,6 +1245,7 @@
         renderHome(stale);
         renderControls(stale);
         renderCameras(stale);
+        renderWeather(stale);
         applyFocus();
         buildDock();
     }
@@ -929,6 +1359,269 @@
         }
     }
 
+    // ---------------------------------------------------- weather page
+    //
+    // The 4th page: the weather entity's forecast from Home Assistant (weather/subscribe_forecast:
+    // daily, plus hourly for style B). Settings > Weather style:
+    //   A  a large card for now or the focused day, and seven day columns
+    //   B  now or the focused day on top, the next 24 hours as a chart, and the week as a strip
+    // Left / Right move along the days and the large card follows. Units come from Home Assistant.
+
+    var wx = { eid: null, daily: null, hourly: null, subDaily: null, subHourly: null, hourlyFailed: false, dailyError: '', html: '', heroDay: -1 };
+
+    function wxSubscribe() {
+        var eid = weatherEid();
+        if (eid !== wx.eid) {
+            wxUnsubscribe();
+            wx.eid = eid;
+            wx.daily = wx.hourly = null;
+            wx.hourlyFailed = false;
+            wx.dailyError = '';
+            renderWeather(!ha.connected);
+        }
+        if (!eid || !ha.connected) { return; }
+        if (!wx.subDaily && !wx.dailyError) { wx.subDaily = wxSub(eid, 'daily'); }
+        if (cfg.wxStyle === 'b' && !wx.subHourly && !wx.hourlyFailed) { wx.subHourly = wxSub(eid, 'hourly'); }
+        if (cfg.wxStyle !== 'b' && wx.subHourly) {
+            haSend('unsubscribe_events', { subscription: wx.subHourly });
+            wx.subHourly = null;
+            wx.hourly = null;
+        }
+    }
+
+    function wxSub(eid, type) {
+        return haSend('weather/subscribe_forecast', { entity_id: eid, forecast_type: type }, function (ok, r, err) {
+            if (ok || !ha.connected) { return; }                    // a dropped connection is not "no forecast"
+            if (type === 'hourly') { wx.hourlyFailed = true; wx.subHourly = null; }
+            else { wx.dailyError = (err && err.message) || 'no forecast'; wx.subDaily = null; }
+            renderWeather(false);
+        });
+    }
+
+    function wxUnsubscribe() {
+        each([wx.subDaily, wx.subHourly], function (id) { if (id && ha.connected) { haSend('unsubscribe_events', { subscription: id }); } });
+        wx.subDaily = wx.subHourly = null;
+    }
+
+    function wxEvent(msg) {
+        var list = (msg.event && msg.event.forecast) || [];
+        if (msg.id === wx.subDaily) { wx.daily = list; } else { wx.hourly = list; }
+        renderWeather(!ha.connected);
+    }
+
+    // ---------------------------------------------------- icons (classes carry the colours, per theme)
+
+    function wxSunSvg(cx, cy, r) {
+        var s = '<circle class="wi-sun" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>';
+        for (var i = 0; i < 8; i++) {
+            var a = i * Math.PI / 4, c = Math.cos(a), si = Math.sin(a);
+            s += '<line class="wi-ray" x1="' + n1(cx + c * (r + 6)) + '" y1="' + n1(cy + si * (r + 6)) + '" x2="' + n1(cx + c * (r + 13)) +
+                '" y2="' + n1(cy + si * (r + 13)) + '"/>';
+        }
+        return s;
+    }
+
+    function wxCloudSvg(x, y, s, cls) {
+        return '<path class="' + (cls || 'wi-cloud') + '" transform="translate(' + x + ' ' + y + ') scale(' + s + ')" d="M14 40h44a14 14 0 0 0 1-28 20 20 0 0 0-38-4A16 16 0 0 0 14 40z"/>';
+    }
+
+    function wxLinesSvg(n, x0, y0, len, slant) {
+        var s = '';
+        for (var i = 0; i < n; i++) {
+            var x = x0 + i * (n > 3 ? 11 : 15);
+            s += '<line class="wi-rain" x1="' + x + '" y1="' + y0 + '" x2="' + (x - slant) + '" y2="' + (y0 + len) + '"/>';
+        }
+        return s;
+    }
+
+    function wxIcon(cond) {
+        var b;
+        if (cond === 'sunny') { b = wxSunSvg(50, 50, 20); }
+        else if (cond === 'clear-night') { b = '<path class="wi-sun" d="M62 18a30 30 0 1 0 22 46A26 26 0 0 1 62 18z"/>'; }
+        else if (cond === 'partlycloudy') { b = wxSunSvg(36, 36, 15) + wxCloudSvg(18, 38, 0.95); }
+        else if (cond === 'rainy') { b = wxCloudSvg(12, 14, 1) + wxLinesSvg(3, 34, 64, 16, 5); }
+        else if (cond === 'pouring') { b = wxCloudSvg(12, 14, 1) + wxLinesSvg(5, 28, 62, 22, 6); }
+        else if (cond === 'lightning' || cond === 'lightning-rainy') {
+            b = wxCloudSvg(12, 14, 1) + '<path class="wi-sun" d="M50 56h12l-8 14h10L46 92l6-16h-9z"/>' + (cond === 'lightning-rainy' ? wxLinesSvg(2, 30, 64, 14, 4) : '');
+        } else if (cond === 'snowy' || cond === 'snowy-rainy' || cond === 'hail') {
+            b = wxCloudSvg(12, 14, 1) + '<circle class="wi-snow" cx="34" cy="72" r="4"/><circle class="wi-snow" cx="50" cy="80" r="4"/><circle class="wi-snow" cx="66" cy="72" r="4"/>' +
+                (cond === 'snowy-rainy' ? wxLinesSvg(1, 58, 76, 12, 3) : '');
+        } else if (cond === 'fog') {
+            b = '<line class="wi-fog" x1="18" y1="40" x2="82" y2="40"/><line class="wi-fog" x1="26" y1="56" x2="90" y2="56"/><line class="wi-fog" x1="12" y1="72" x2="70" y2="72"/>';
+        } else if (cond === 'windy' || cond === 'windy-variant') {
+            b = '<path class="wi-fog" d="M14 40h48a10 10 0 1 0-10-10M14 58h62a10 10 0 1 1-10 10M20 76h30"/>';
+        } else { b = wxCloudSvg(30, 20, 0.8, 'wi-cloud2') + wxCloudSvg(10, 36, 1); }   // cloudy, exceptional, unknown
+        return '<svg class="wi" viewBox="0 0 100 100">' + b + '</svg>';
+    }
+
+    var DROP_SVG = '<svg class="drp" viewBox="0 0 18 22"><path d="M9 1C6 6 2 10 2 14a7 7 0 0 0 14 0c0-4-4-8-7-13z"/></svg>';
+
+    // ---------------------------------------------------- formatting
+
+    function compass(b) { return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round((((+b) % 360) + 360) % 360 / 45) % 8]; }
+    function rnum(v) { return v === undefined || v === null || isNaN(+v) ? null : Math.round(+v); }
+    function hhmm(d) {
+        var h = d.getHours();
+        return cfg.clock24 ? pad(h) + ':' + pad(d.getMinutes()) : ((h + 11) % 12 + 1) + (d.getMinutes() ? ':' + pad(d.getMinutes()) : '') + (h < 12 ? ' AM' : ' PM');
+    }
+
+    function wxDayLabel(f, i) {
+        var d = new Date(f.datetime), today = new Date();
+        var isToday = d.toDateString() === today.toDateString();
+        return { name: isToday ? 'Today' : DAYS[d.getDay()].slice(0, 3), date: d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3),
+            long: isToday ? 'Today' : DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3), today: isToday, idx: i };
+    }
+
+    function wxAttrs() { var st = wx.eid && ha.states[wx.eid]; return (st && st.attributes) || {}; }
+
+    function wxUnits() {
+        var a = wxAttrs();
+        return { wind: a.wind_speed_unit || 'km/h', rain: a.precipitation_unit || 'mm' };
+    }
+
+    // Details for the large card: index 0 that is today shows the current conditions.
+    function wxDetail(i) {
+        var days = (wx.daily || []).slice(0, 7), f = days[i] || {}, a = wxAttrs(), u = wxUnits(), lab = days[i] ? wxDayLabel(f, i) : { today: true, long: 'Now' };
+        var now = i === 0 && lab.today, st = ha.states[wx.eid] || {}, rows = [];
+        var hi = rnum(f.temperature), lo = rnum(f.templow);
+        var cond = now ? st.state : f.condition;
+        if (hi !== null) { rows.push(['High / low', hi + '°' + (lo !== null ? ' / ' + lo + '°' : '')]); }
+        var pp = rnum(f.precipitation_probability);
+        if (pp !== null || f.precipitation) {
+            rows.push(['Rain', (pp !== null ? pp + '%' : '') + (f.precipitation ? (pp !== null ? ' · ' : '') + f.precipitation + ' ' + u.rain : '')]);
+        }
+        var ws = rnum(now ? a.wind_speed : f.wind_speed), wb = now ? a.wind_bearing : f.wind_bearing;
+        if (ws !== null) { rows.push(['Wind', ws + ' ' + u.wind + (wb !== undefined && wb !== null ? ' ' + compass(wb) : '')]); }
+        var hum = rnum(now ? a.humidity : f.humidity);
+        if (hum !== null) { rows.push(['Humidity', hum + '%']); }
+        var sun = ha.states['sun.sun'], sa = (sun && sun.attributes) || {};
+        if (now && sa.next_rising && sa.next_setting) { rows.push(['Sunrise / sunset', hhmm(new Date(sa.next_rising)) + ' / ' + hhmm(new Date(sa.next_setting))]); }
+        if (now && rnum(a.uv_index) !== null) { rows.push(['UV index', rnum(a.uv_index)]); }
+        var feels = rnum(a.apparent_temperature);
+        return {
+            title: now ? 'Now' : lab.long, cond: cond, label: WEATHER[cond] || cap(cond || ''),
+            temp: now ? rnum(a.temperature) : hi,
+            sub: now ? (feels !== null ? 'Feels like ' + feels + '°' : (hi !== null ? 'High ' + hi + '° · Low ' + lo + '°' : ''))
+                : (hi !== null ? 'High ' + hi + '°' + (lo !== null ? ' · Low ' + lo + '°' : '') : ''),
+            rows: rows
+        };
+    }
+
+    function wxFocusedDay() {
+        var s = sel[P_WX] || '';
+        return s.indexOf('day:') === 0 ? +s.slice(4) : 0;
+    }
+
+    // ---------------------------------------------------- rendering
+
+    function wxHeroHtml(i, style) {
+        var d = wxDetail(i), rows = '';
+        each(d.rows, function (r) { rows += '<div class="wrow"><span>' + esc(r[0]) + '</span><b>' + esc(r[1]) + '</b></div>'; });
+        if (style === 'b') {
+            return '<div class="wnowIc">' + wxIcon(d.cond) + '</div><div class="wnowT">' + (d.temp !== null ? d.temp + '°' : '–') + '</div>' +
+                '<div class="wnowC"><div class="wwhen">' + esc(d.title) + '</div><div class="wcond">' + esc(d.label) + '</div><div class="wsub">' + esc(d.sub) + '</div></div>' +
+                '<div class="wnowRows">' + rows + '</div>';
+        }
+        return '<div class="wwhen">' + esc(d.title) + '</div><div class="wbig">' + wxIcon(d.cond) + '<div class="wtemp">' + (d.temp !== null ? d.temp + '°' : '–') + '</div></div>' +
+            '<div class="wcond">' + esc(d.label) + '</div><div class="wsub">' + esc(d.sub) + '</div><div class="wrows">' + rows + '</div>';
+    }
+
+    function wxWeekA(days) {
+        var lo = 1e9, hi = -1e9, html = '';
+        each(days, function (f) { lo = Math.min(lo, rnum(f.templow) !== null ? +f.templow : +f.temperature); hi = Math.max(hi, +f.temperature); });
+        var span = Math.max(1, hi - lo), u = wxUnits();
+        each(days, function (f, i) {
+            var lab = wxDayLabel(f, i), t = rnum(f.temperature), l = rnum(f.templow), pp = rnum(f.precipitation_probability), ws = rnum(f.wind_speed);
+            var top = (hi - f.temperature) / span * 100, bot = ((l !== null ? f.templow : f.temperature) - lo) / span * 100;
+            html += '<div class="wday wcol" data-key="day:' + i + '"><div class="dn">' + lab.name + '</div><div class="dd">' + lab.date + '</div>' +
+                wxIcon(f.condition) + '<div class="hi">' + (t !== null ? t + '°' : '–') + '</div>' +
+                '<div class="range"><b style="top:' + n1(top) + '%;bottom:' + n1(bot) + '%"></b></div>' +
+                '<div class="lo">' + (l !== null ? l + '°' : '') + '</div>' +
+                '<div class="pp">' + (pp !== null ? DROP_SVG + pp + '%' : '') + '</div><div class="wind">' + (ws !== null ? ws + ' ' + u.wind : '') + '</div></div>';
+        });
+        return html;
+    }
+
+    function wxStripB(days) {
+        var html = '';
+        each(days, function (f, i) {
+            var lab = wxDayLabel(f, i), t = rnum(f.temperature), l = rnum(f.templow), pp = rnum(f.precipitation_probability);
+            html += '<div class="wday wcard" data-key="day:' + i + '"><div class="dn">' + lab.name + '</div>' + wxIcon(f.condition) +
+                '<div class="t">' + (t !== null ? t + '°' : '–') + (l !== null ? ' <span>' + l + '°</span>' : '') + '</div>' +
+                '<div class="pp">' + (pp !== null ? pp + '% rain' : '') + '</div></div>';
+        });
+        return html;
+    }
+
+    // Next 24 hours: temperature line with labels and icons every 3 hours, rain chance as bars.
+    function wxHoursSvg() {
+        var now = Date.now() - 3600000, list = [];
+        each(wx.hourly || [], function (f) { if (list.length < 24 && new Date(f.datetime).getTime() >= now) { list.push(f); } });
+        if (list.length < 4) { return '<div class="wnote">' + (wx.hourlyFailed ? 'This weather service has no hourly forecast.' : 'Loading the hourly forecast...') + '</div>'; }
+        var W = 1620, x0 = 30, step = (W - 60) / (list.length - 1), lo = 1e9, hi = -1e9;
+        each(list, function (f) { lo = Math.min(lo, +f.temperature); hi = Math.max(hi, +f.temperature); });
+        var span = Math.max(4, hi - lo);
+        function y(t) { return 178 - (t - lo) / span * 84; }
+        var path = '', svg = '<svg class="whours" width="' + W + '" height="250" viewBox="0 0 ' + W + ' 250">';
+        each(list, function (f, i) { path += (i ? 'L' : 'M') + n1(x0 + i * step) + ' ' + n1(y(+f.temperature)); });
+        svg += '<path class="wfill" d="' + path + 'L' + n1(x0 + (list.length - 1) * step) + ' 190 L' + x0 + ' 190 Z"/><path class="wline" d="' + path + '"/>';
+        each(list, function (f, i) {
+            var pp = rnum(f.precipitation_probability);
+            if (pp !== null) { var h = Math.max(4, pp * 0.36); svg += '<rect class="wbar" x="' + n1(x0 + i * step - 9) + '" y="' + n1(250 - h) + '" width="18" height="' + n1(h) + '" rx="4"/>'; }
+        });
+        each(list, function (f, i) {
+            if (i % 3) { return; }
+            var x = x0 + i * step, yy = y(+f.temperature);
+            svg += '<text class="wtt" x="' + n1(x) + '" y="' + n1(yy - 16) + '">' + rnum(f.temperature) + '°</text>' +
+                '<text class="wht" x="' + n1(x) + '" y="214">' + (i === 0 ? 'Now' : hhmm(new Date(f.datetime))) + '</text>' +
+                '<g transform="translate(' + n1(x + 22) + ' ' + n1(yy - 52) + ') scale(.4)">' + wxIcon(f.condition).replace(/^<svg[^>]*>|<\/svg>$/g, '') + '</g>';
+        });
+        return svg + '</svg>';
+    }
+
+    function renderWeather(stale) {
+        var area = $('wxArea'), html, style = cfg.wxStyle === 'b' ? 'b' : 'a';
+        var days = (wx.daily || []).slice(0, 7);
+        if (!H.ha().token) { html = emptyHtml('', ''); }
+        else if (!wx.eid) {
+            html = '<div class="empty">' + (ha.connected ? 'No weather entity in Home Assistant. Add a weather integration (Met.no works well) to see the forecast here.'
+                : 'Waiting for Home Assistant...') + '</div>';
+        } else if (wx.dailyError) { html = '<div class="empty">' + esc(wx.eid) + ' has no daily forecast (' + esc(wx.dailyError) + ').</div>'; }
+        else if (!days.length) { html = '<div class="empty">Loading the forecast...</div>'; }
+        else {
+            var i = Math.min(wxFocusedDay(), days.length - 1);
+            wx.heroDay = i;
+            html = style === 'a'
+                ? '<div class="wxA"><div class="wcard2 whero" id="wxHero">' + wxHeroHtml(i, 'a') + '</div><div class="wweek">' + wxWeekA(days) + '</div></div>'
+                : '<div class="wxB"><div class="wcard2 wnow" id="wxHero">' + wxHeroHtml(i, 'b') + '</div>' +
+                  '<div class="wcard2 whrs"><h4>Next 24 hours</h4>' + wxHoursSvg() + '</div><div class="wstrip">' + wxStripB(days) + '</div></div>';
+        }
+        html += '<div class="wsrc">' + esc(wx.eid || '') + '</div>';
+        area.className = stale ? 'stale' : '';
+        if (html !== wx.html) {
+            wx.html = html;
+            area.innerHTML = html;
+            var s = sel[P_WX];
+            if (s && s.indexOf('day:') === 0 && !itemByKey(P_WX, s)) { sel[P_WX] = null; }
+            if (!sel[P_WX] && page === P_WX) { var items = itemsOf(P_WX); sel[P_WX] = items.length ? items[0].key : 'edge:l'; }
+            if (page === P_WX) { applyFocus(); }
+        }
+    }
+
+    // The large card follows the focused day.
+    function wxFollowFocus() {
+        var hero = $('wxHero'), i = wxFocusedDay();
+        if (!hero || i === wx.heroDay) { return; }
+        wx.heroDay = i;
+        hero.innerHTML = wxHeroHtml(i, cfg.wxStyle === 'b' ? 'b' : 'a');
+    }
+
+    function wxStatus() {
+        if (!wx.eid) { return 'no weather entity'; }
+        return wx.eid + ' · ' + (wx.daily ? wx.daily.length + ' days' : wx.dailyError ? 'no forecast' : 'waiting for the forecast') +
+            (cfg.wxStyle === 'b' ? (wx.hourly ? ' · ' + wx.hourly.length + ' hours' : wx.hourlyFailed ? ' · no hourly forecast' : '') : '');
+    }
+
     // ---------------------------------------------------- brightness
     //
     // CH + / CH - on a dimmable light: 10 % steps, down to 1 %, then off. The tile shows the
@@ -1032,14 +1725,16 @@
 
     function renderCameras(stale) {
         var cams = selectedOf('camera').slice(0, MAX_CAMERAS), area = $('camArea');
-        var sig = cams.join(',') + '|' + (stale ? 1 : 0);
+        // the area's size is part of the signature: if the stylesheet wasn't applied yet on the first
+        // render, the grid is rebuilt as soon as the real size is known
+        var sig = cams.join(',') + '|' + (stale ? 1 : 0) + '|' + area.clientWidth + 'x' + area.clientHeight;
         each(cams, function (eid) { sig += '|' + displayName(eid) + '/' + areaOf(eid); });
         if (sig === camSig) { return; }
         camSig = sig;
         if (!cams.length) {
             area.innerHTML = emptyHtml('cameras', '');
         } else {
-            var html = '', rects = camLayout(cams.length, area.clientWidth || 1700, area.clientHeight || 882);
+            var html = '', rects = camLayout(cams.length, area.clientWidth || 1700, area.clientHeight || 856);
             each(cams, function (eid, i) {
                 var r = rects[i], url = camStill.url[eid];
                 html += '<div class="camtile' + (r.w < 600 ? ' s' : '') + '" data-key="cam:' + esc(eid) + '" style="left:' + Math.round(r.x) +
@@ -1052,11 +1747,11 @@
             area.innerHTML = html;
         }
         area.className = stale ? 'stale' : '';
-        var s = sel[2];
-        if (s && s.indexOf('cam:') === 0 && !itemByKey(2, s)) { sel[2] = null; }
-        if (!sel[2] && page === 2) {
-            var items = itemsOf(2);
-            sel[2] = items.length ? items[0].key : 'edge:l';
+        var s = sel[P_CAM];
+        if (s && s.indexOf('cam:') === 0 && !itemByKey(P_CAM, s)) { sel[P_CAM] = null; }
+        if (!sel[P_CAM] && page === P_CAM) {
+            var items = itemsOf(P_CAM);
+            sel[P_CAM] = items.length ? items[0].key : 'edge:l';
         }
         updateCamAges();
     }
@@ -1067,10 +1762,10 @@
 
     function refreshCamStills() {
         clearTimeout(camStill.timer);
-        if (page !== 2 || mode === 'camera' || document.hidden || !ha.connected) { return; }
+        if (page !== P_CAM || mode === 'camera' || document.hidden || !ha.connected) { return; }
         var cams = selectedOf('camera').slice(0, MAX_CAMERAS), now = Date.now(), many = cams.length > 4;
         each(cams, function (eid) {
-            var every = many ? (sel[2] === 'cam:' + eid ? 3000 : 12000) : 4000;
+            var every = many ? (sel[P_CAM] === 'cam:' + eid ? 3000 : 12000) : 4000;
             if (camStill.loading[eid] || (camStill.last[eid] && now - camStill.last[eid] < every - 250)) { return; }
             var url = snapshotUrl(eid);
             if (!url) { return; }
@@ -1294,7 +1989,6 @@
             var def = appDef(entry);
             items.push({ app: entry, label: def.name, glyph: def.glyph });
         });
-        items.push({ action: 'apps', label: 'Edit apps', glyph: 'plus' });
         items.push({ action: 'settings', label: 'Settings', glyph: 'gear' });
         var sig = cfg.icons + '|';
         each(items, function (d) { sig += (d.app || d.action || d.camera) + '=' + d.label + ';'; });
@@ -1304,7 +1998,7 @@
         each(items, function (d) {
             var attr = d.app ? ' data-app="' + esc(d.app) + '"' : (d.camera ? ' data-camera="' + esc(d.camera) + '"' : ' data-action="' + d.action + '"');
             var face = d.glyph ? GLYPHS[d.glyph] : '<span class="glyph mono">' + esc(monogram(d.label)) + '</span>';
-            html += '<div class="tile big' + (d.camera ? ' cam' : '') + (d.action === 'apps' ? ' add' : '') + '"' + attr + '>' +
+            html += '<div class="tile big' + (d.camera ? ' cam' : '') + '"' + attr + '>' +
                 '<div class="face">' + face + '</div><div class="label">' + esc(d.label) + '</div></div>';
         });
         $('dockTrack').innerHTML = html;
@@ -1435,6 +2129,7 @@
         stopCamPlayback();
         var tok = cam.token;
         mode = 'camera';
+        updateFx();
         cam.eid = eid;
         clearInterval(wallTimer);
         wallTimer = null;
@@ -1519,6 +2214,7 @@
         scheduleWalls();
         applyFocus();
         refreshCamStills();
+        updateFx();
     }
 
     function switchCamera(dir) {
@@ -1553,7 +2249,6 @@
         t.className += ' pressed';
         setTimeout(function () { t.className = t.className.replace(/\s*pressed/g, ''); }, 160);
         if (t.getAttribute('data-action') === 'settings') { openSettings(); return; }
-        if (t.getAttribute('data-action') === 'apps') { openApps(); return; }
         cfg.focus = focus;
         save('focus');
         if (t.getAttribute('data-camera')) { openCamera(t.getAttribute('data-camera')); return; }
@@ -1801,7 +2496,13 @@
         if (def.key === 'interval') { scheduleWalls(); }
         if (def.key === 'source') { refreshHaWalls(); nextWall(); }
         if (def.key === 'motion' || def.key === 'captions') { wallPos = (wallPos + playlist().length - 1) % Math.max(1, playlist().length); nextWall(); }
-        if (def.key === 'clock24') { tickClock(); }
+        if (def.key === 'clock24') { tickClock(); renderWeather(!ha.connected); }
+        if (def.key === 'wxStyle') { wxSubscribe(); renderWeather(!ha.connected); }
+        if (def.key === 'season') {
+            updateFx();
+            if (cfg.season === 'p:newyear') { checkCountdown(true); }      // the preview shows a 10 s countdown
+            if (before === 'off' || cfg.season === 'off') { haSubscribe(); }
+        }
         if (def.key === 'icons') { applyIcons(); }
         if (def.key === 'theme') {
             applyTheme();
@@ -1867,6 +2568,8 @@
             ['Last update check', st.lastCheck + ' · ' + st.lastResult],
             ['Home Assistant widgets', (ha.status || 'not started') + (ha.connected ? ' · ' + ha.all.length + ' entities' : '')],
             ['Home Assistant wallpapers', haWalls.length + (cfg.source === 'builtin' ? ' (not in use)' : '')],
+            ['Seasonal effects', fxStatus()],
+            ['Weather page', wxStatus()],
             ['Camera player', (H.get('camPlayer', null) ? H.get('camPlayer', null) + ' (worked last time)' : 'not used yet') +
                 (cam.lastError ? ' · last problem: ' + cam.lastError : '')]
         ];
@@ -1978,9 +2681,10 @@
             clearTimeout(clockTimer);
             clearTimeout(camStill.timer);
             wallTimer = null;
+            updateFx();
         } else {
             refreshCamStills();
-            tickClock();
+            tickClock();                                           // also restarts the effects
             if (Date.now() - haListAt > 5 * 60000) { refreshHaWalls(); }
             scheduleWalls();
             if (!ha.ws && !ha.authFailed) { ha.retryMs = 2000; haConnect(); }

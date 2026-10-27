@@ -113,6 +113,371 @@
     pointer-events: none;
 }
 
+/* ---------------------------------------------------------- Weather page */
+/* Flex and margins only: Tizen 4's engine has no CSS grid, flex gap or inset. */
+
+#pageWeather { left: 3840px; }       /* 3rd page */
+
+#wxArea {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    transition: opacity 0.4s ease;
+}
+
+#wxArea.stale { opacity: 0.6; }
+
+.wcard2 {
+    position: absolute;
+    box-sizing: border-box;
+    background: var(--card-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 28px;
+}
+
+.wsrc {
+    position: absolute;
+    left: 110px;
+    bottom: 30px;
+    font-size: 18px;
+    color: var(--fg-dim);
+}
+
+.wwhen { font-size: 26px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fg-dim); }
+.wcond { font-size: 36px; margin-top: 18px; }
+.wsub { font-size: 24px; margin-top: 6px; color: var(--fg-dim); }
+.wrow { display: flex; justify-content: space-between; padding: 14px 2px; font-size: 26px; border-bottom: 2px solid var(--card-border); }
+.wrow span { color: var(--fg-dim); }
+.wrow b { font-weight: 400; }
+
+/* the days (both styles) */
+.wday {
+    box-sizing: border-box;
+    background: var(--card-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 28px;
+    transition: transform 0.18s ease-out, background-color 0.18s ease-out;
+    will-change: transform;
+}
+
+.wday.focused {
+    background: var(--focus-bg);
+    border-color: var(--focus-bg);
+    color: var(--focus-fg);
+    transform: scale(1.04);
+    box-shadow: 0 24px 54px rgba(0, 0, 0, 0.45);
+    z-index: 2;
+}
+
+.wday .pp { color: #7fb8ff; }
+.theme-light .wday .pp { color: #3d84e0; }
+.theme-dark .wday.focused .pp { color: #2f6fd0; }
+.theme-light .wday.focused .pp { color: #8cc2ff; }
+
+/* ---- style A: large card + seven columns */
+.whero { left: 110px; top: 150px; width: 620px; height: 800px; padding: 44px 48px; }
+.wbig { display: flex; align-items: center; margin-top: 18px; }
+.wbig .wi { width: 170px; height: 170px; margin-right: 26px; flex: none; }
+.wtemp { font-size: 150px; font-weight: 300; line-height: 1; letter-spacing: -4px; }
+.wrows { margin-top: 30px; border-top: 2px solid var(--card-border); }
+
+.wweek {
+    position: absolute;
+    left: 760px;
+    top: 150px;
+    width: 1050px;
+    height: 800px;
+    display: flex;
+}
+
+.wcol {
+    flex: 1;
+    margin-left: 14px;
+    padding: 30px 0 26px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.wcol:first-child { margin-left: 0; }
+.wcol .dn { font-size: 26px; font-weight: 600; }
+.wcol .dd { font-size: 19px; margin-top: 4px; color: var(--fg-dim); }
+.wcol .wi { width: 88px; height: 88px; margin: 22px 0 8px; }
+.wcol .hi { font-size: 34px; font-weight: 500; }
+.wcol .lo { font-size: 28px; color: var(--fg-dim); }
+.wcol .range { position: relative; width: 12px; height: 330px; margin: 14px 0; border-radius: 6px; background: var(--card-border); }
+.wcol .range b { position: absolute; left: 0; right: 0; border-radius: 6px; background: linear-gradient(to top, #7fb8ff, #ffb15c); }
+.wcol .pp { display: flex; align-items: center; margin-top: auto; font-size: 23px; }
+.wcol .pp .drp { width: 18px; height: 22px; margin-right: 6px; fill: currentColor; }
+.wcol .wind { font-size: 19px; margin-top: 8px; color: var(--fg-dim); }
+.wday.focused .dd, .wday.focused .lo, .wday.focused .wind { color: inherit; opacity: 0.65; }
+
+/* ---- style B: now + next 24 hours + week strip */
+.wnow { left: 110px; top: 150px; width: 1700px; height: 230px; padding: 0 50px; display: flex; align-items: center; }
+.wnowIc { margin-right: 30px; }
+.wnowIc .wi { width: 150px; height: 150px; }
+.wnowT { margin-right: 34px; font-size: 130px; font-weight: 300; letter-spacing: -4px; line-height: 1; }
+.wnowC .wwhen { font-size: 20px; }
+.wnowC .wcond { font-size: 34px; margin-top: 4px; }
+.wnowC .wsub { font-size: 23px; }
+.wnowRows { margin-left: auto; width: 660px; display: flex; flex-wrap: wrap; }
+.wnowRows .wrow { width: 310px; margin-left: 20px; padding: 7px 0; font-size: 22px; border: 0; }
+
+.whrs { left: 110px; top: 400px; width: 1700px; height: 310px; padding: 22px 40px; }
+.whrs h4 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--fg-dim); }
+.whours { position: absolute; left: 40px; top: 52px; }
+.wfill { fill: rgba(255, 177, 92, 0.25); }
+.wline { fill: none; stroke: #ffb15c; stroke-width: 4; stroke-linejoin: round; }
+.wbar { fill: #7fb8ff; opacity: 0.55; }
+.theme-light .wbar { fill: #3d84e0; }
+.wtt { font-size: 24px; fill: currentColor; text-anchor: middle; }
+.wht { font-size: 19px; fill: currentColor; opacity: 0.6; text-anchor: middle; }
+.wnote { margin-top: 90px; text-align: center; font-size: 26px; color: var(--fg-dim); }
+
+.wstrip { position: absolute; left: 110px; top: 730px; width: 1700px; height: 230px; display: flex; }
+.wcard { flex: 1; margin-left: 14px; padding: 20px 0; display: flex; flex-direction: column; align-items: center; }
+.wcard:first-child { margin-left: 0; }
+.wcard .dn { font-size: 24px; font-weight: 600; }
+.wcard .wi { width: 70px; height: 70px; margin: 10px 0 6px; }
+.wcard .t { font-size: 28px; }
+.wcard .t span { color: var(--fg-dim); }
+.wday.focused .t span { color: inherit; opacity: 0.6; }
+.wcard .pp { font-size: 21px; margin-top: 6px; }
+
+/* ---- weather icons: colours per theme, and on the focused (inverted) day */
+.wi-sun { fill: #ffd27a; }
+.wi-ray { stroke: #ffd27a; stroke-width: 4; stroke-linecap: round; }
+.wi-cloud { fill: #e9eef6; }
+.wi-cloud2 { fill: #b9c3d3; }
+.wi-rain { stroke: #7fb8ff; stroke-width: 4; stroke-linecap: round; }
+.wi-snow { fill: #e9eef6; }
+.wi-fog { fill: none; stroke: #b9c3d3; stroke-width: 6; stroke-linecap: round; }
+.theme-light .wi-cloud, .theme-light .wi-snow { fill: #fff; stroke: rgba(16, 20, 28, 0.16); stroke-width: 1.5; }
+.theme-light .wi-rain { stroke: #3d84e0; }
+.theme-dark .wday.focused .wi-cloud, .theme-dark .wday.focused .wi-snow { fill: #cfd7e3; }
+.theme-dark .wday.focused .wi-cloud2 { fill: #8e9aae; }
+.theme-dark .wday.focused .wi-rain { stroke: #2f6fd0; }
+.theme-light .wday.focused .wi-cloud, .theme-light .wday.focused .wi-snow { fill: #fff; stroke: none; }
+.theme-light .wday.focused .wi-rain { stroke: #8cc2ff; }
+
+/* ---------------------------------------------------------- seasonal effects */
+
+/* Particles are drawn once and only moved with transform / opacity keyframes, so the compositor
+   animates them by itself. Shapes come from gradients, border-radius or tiny inline SVGs. */
+#fx, #fxTint {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+#fx { display: none; }
+
+/* fireworks (a short celebration) draw above the cards, below the tabs and menus */
+#fx.top { z-index: 2; }
+
+/* golden hour: a warm glow from the bottom that fades in slowly */
+#fxTint {
+    background: linear-gradient(to top, rgba(255, 138, 48, 0.30) 0%, rgba(255, 160, 70, 0.14) 45%, rgba(255, 190, 120, 0) 80%);
+    opacity: 0;
+    transition: opacity 6s ease;
+}
+
+#fxTint.on { opacity: 1; }
+
+.fxp {
+    position: absolute;
+    top: 0;
+    will-change: transform;
+}
+
+/* snow */
+.flake {
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, rgba(255, 255, 255, 0.9) 38%, rgba(255, 255, 255, 0) 70%);
+}
+
+.theme-light .flake {
+    background: radial-gradient(circle, #fff 0%, #fff 36%, rgba(120, 140, 170, 0.45) 50%, rgba(120, 140, 170, 0) 70%);
+}
+
+/* rain */
+.drop {
+    width: 2px;
+    border-radius: 1px;
+    background: linear-gradient(to bottom, rgba(210, 225, 255, 0), rgba(210, 225, 255, 0.9));
+    box-shadow: 0 0 1px rgba(20, 30, 50, 0.35);       /* still shows on bright wallpapers */
+}
+
+.theme-light .drop { background: linear-gradient(to bottom, rgba(60, 80, 110, 0), rgba(60, 80, 110, 0.7)); }
+
+/* thunderstorm: a flash from the top every so often */
+.flash {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(ellipse at 50% 0%, rgba(235, 240, 255, 0.95), rgba(200, 215, 255, 0.35) 60%, rgba(200, 215, 255, 0.1));
+    opacity: 0;
+    will-change: opacity;
+}
+
+@keyframes fxflash {
+    0% { opacity: 0; }
+    1% { opacity: 0.5; }
+    1.8% { opacity: 0.08; }
+    2.6% { opacity: 0.38; }
+    4.5% { opacity: 0; }
+    100% { opacity: 0; }
+}
+
+/* fog: a few wide soft bands drifting slowly */
+.fogband {
+    position: absolute;
+    left: -340px;
+    width: 2600px;
+    height: 420px;
+    background: radial-gradient(ellipse at center, rgba(235, 238, 245, 0.3) 0%, rgba(235, 238, 245, 0.14) 40%, rgba(235, 238, 245, 0) 70%);
+    will-change: transform;
+}
+
+@keyframes fxfog {
+    from { transform: translate3d(-260px, 0, 0); }
+    to { transform: translate3d(260px, 0, 0); }
+}
+
+/* clear night: twinkling stars and the odd shooting star */
+.star {
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, rgba(255, 255, 255, 0.8) 40%, rgba(255, 255, 255, 0) 75%);
+    will-change: opacity;
+}
+
+@keyframes fxtwinkle {
+    from { opacity: 0.15; }
+    to { opacity: 0.95; }
+}
+
+.shoot {
+    width: 180px;
+    height: 2px;
+    background: linear-gradient(to left, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+    opacity: 0;
+}
+
+@keyframes fxshoot {
+    0% { transform: translate3d(0, 0, 0) rotate(-26.6deg); opacity: 0; }
+    1% { opacity: 1; }
+    5% { transform: translate3d(-520px, 260px, 0) rotate(-26.6deg); opacity: 0; }
+    100% { transform: translate3d(-520px, 260px, 0) rotate(-26.6deg); opacity: 0; }
+}
+
+/* autumn leaves and spring petals */
+.leaf {
+    border-radius: 0 80% 0 80%;
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(0, 0, 0, 0.18));
+}
+
+.petal {
+    border-radius: 80% 0 80% 0;
+    background: radial-gradient(circle at 30% 30%, #fff1f6 0%, #f9c6d8 45%, #ee9fbe 100%);
+}
+
+/* St. Patrick's Day */
+.clover {
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><g fill='%2338b25a'><circle cx='12' cy='7' r='4.6'/><circle cx='7' cy='13' r='4.6'/><circle cx='17' cy='13' r='4.6'/><path d='M11.2 13h1.6l1.6 9.5h-1.8z'/></g></svg>") center / contain no-repeat;
+}
+
+/* Valentine's Day */
+.heart.h0 { background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23ff5c8a' d='M12 21s-7.5-4.6-10-9.3C.4 8.3 2.4 4 6.3 4c2.3 0 3.9 1.3 5.7 3.4C13.8 5.3 15.4 4 17.7 4c3.9 0 5.9 4.3 4.3 7.7C19.5 16.4 12 21 12 21z'/></svg>") center / contain no-repeat; }
+.heart.h1 { background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23ff2e63' d='M12 21s-7.5-4.6-10-9.3C.4 8.3 2.4 4 6.3 4c2.3 0 3.9 1.3 5.7 3.4C13.8 5.3 15.4 4 17.7 4c3.9 0 5.9 4.3 4.3 7.7C19.5 16.4 12 21 12 21z'/></svg>") center / contain no-repeat; }
+.heart.h2 { background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23ffb3c8' d='M12 21s-7.5-4.6-10-9.3C.4 8.3 2.4 4 6.3 4c2.3 0 3.9 1.3 5.7 3.4C13.8 5.3 15.4 4 17.7 4c3.9 0 5.9 4.3 4.3 7.7C19.5 16.4 12 21 12 21z'/></svg>") center / contain no-repeat; }
+
+/* Halloween: bats (the inner element flaps) and rising embers */
+.bat { left: 0; }
+
+.bat b {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 18'><path fill='%23181420' stroke='rgba(255,255,255,0.35)' stroke-width='0.4' d='M12 6.2c-.6-1.4-1.3-2-1.8-2 .2.8.1 1.4-.2 1.8C8.6 4.5 5.6 3.2 1 4.2c2 1.2 3 2.8 3.2 4.6 1.2-.9 2.6-1 3.8-.3.3 1.4 1.6 2.4 4 3.6 2.4-1.2 3.7-2.2 4-3.6 1.2-.7 2.6-.6 3.8.3.2-1.8 1.2-3.4 3.2-4.6-4.6-1-7.6.3-9.2 1.8-.3-.4-.4-1-.2-1.8-.5 0-1.2.6-1.8 2z'/></svg>") center / contain no-repeat;
+    animation: fxflap 0.3s ease-in-out infinite alternate;
+    will-change: transform;
+}
+
+@keyframes fxflap {
+    from { transform: scale(1, 1); }
+    to { transform: scale(0.92, 0.45); }
+}
+
+.ember {
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff3c4 0%, #ffb347 30%, rgba(255, 120, 30, 0.5) 55%, rgba(255, 90, 0, 0) 72%);
+}
+
+/* fireworks: bursts of sparks; each burst sets its colour in --c */
+.burst {
+    position: absolute;
+    width: 0;
+    height: 0;
+}
+
+.spark {
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, var(--c) 35%, rgba(0, 0, 0, 0) 72%);
+    opacity: 0;
+}
+
+/* birthdays */
+.confetti { border-radius: 2px; }
+
+/* New Year countdown */
+#countdown {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    padding: 20px 70px;
+    border-radius: 80px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    font-size: 150px;
+    font-weight: 600;
+    text-shadow: 0 6px 30px rgba(0, 0, 0, 0.5);
+    transform: translate3d(-50%, -50%, 0);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    z-index: 9;
+}
+
+#countdown.on { opacity: 1; }
+#countdown.big { font-size: 230px; }
+#countdown.cheer { font-size: 110px; }
+
+/* frame-rate pill (Seasonal effects: Snow + frame rate) */
+#fps {
+    display: none;
+    position: absolute;
+    left: 40px;
+    bottom: 30px;
+    padding: 8px 18px;
+    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+    z-index: 11;
+}
+
 /* ---------------------------------------------------------- clock */
 
 #clock {
@@ -169,7 +534,7 @@
 
 #pageHome { left: 0; }
 #pageControls { left: 1920px; }
-#pageCameras { left: 3840px; }
+#pageCameras { left: 5760px; }       /* 4th page */
 
 /* darker backdrop behind Controls and Cameras so the tiles read well */
 #veil {
@@ -650,8 +1015,6 @@
     letter-spacing: 1px;
 }
 
-.tile.add .face { border-style: dashed; }
-.tile.add.focused .face { border-style: solid; }
 
 .tile .face {
     position: relative;
@@ -713,6 +1076,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    z-index: 6;              /* above the tabs, clock and arrows (3) and the player (5); below the toast */
 }
 
 .panel {
@@ -1013,6 +1377,10 @@
 /* AVPlay draws behind the page: everything above it must be see-through */
 #stage.avplay-on #bg,
 #stage.avplay-on #shade,
+#stage.avplay-on #fx,
+#stage.avplay-on #fxTint,
+#stage.avplay-on #countdown,
+#stage.avplay-on #fps,
 #stage.avplay-on #veil,
 #stage.avplay-on #pages,
 #stage.avplay-on #tabs,
