@@ -1,14 +1,23 @@
 # Haven
 
-A Home Assistant powered home screen for Samsung Tizen TVs. Sensors, light and switch
-buttons, cameras and your own photos on the TV, with a dock for the apps you actually use.
-The design lives on Home Assistant, so you change it there and the TV updates itself.
+A Home Assistant powered home screen for Samsung Tizen TVs. Three pages you slide between
+with the remote: **Home** (your apps and up to 15 sensors), **Controls** (lights and switches
+by room, with dimming) and **Cameras** (up to 9 live cameras in an adaptive grid). The design
+lives on Home Assistant, so you change it there and the TV updates itself.
 
-![Haven home screen, dark theme](docs/screenshots/home-dark.jpg)
+![Haven Home page, dark theme](docs/screenshots/home-dark.jpg)
 
-| Light theme | Settings | Widget picker |
-|---|---|---|
-| ![Light theme](docs/screenshots/home-light.jpg) | ![Settings](docs/screenshots/settings.jpg) | ![Widget picker](docs/screenshots/widget-picker.jpg) |
+| Controls | Cameras |
+|---|---|
+| ![Controls page](docs/screenshots/controls.jpg) | ![Cameras page](docs/screenshots/cameras.jpg) |
+
+| Light theme | Settings |
+|---|---|
+| ![Light theme](docs/screenshots/home-light.jpg) | ![Settings](docs/screenshots/settings.jpg) |
+
+| Widget picker | Cameras, three in one layout |
+|---|---|
+| ![Widget picker](docs/screenshots/widget-picker.jpg) | ![Three cameras](docs/screenshots/cameras-3.jpg) |
 
 *Screenshots use sample data.*
 
@@ -21,21 +30,29 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
 
 ## Features
 
+- **Three pages:** Home, Controls and Cameras. Tabs at the top, dots at the bottom and a
+  round arrow at each side show where you are. Press Right on the last item (or Left on the
+  first) to reach the arrow, then Right / Left again or OK to slide to the next page.
+- **Home:** clock, wallpaper, up to 15 live sensor cards (5 by 3: weather, room
+  temperatures, solar production, humidity, doors, thermostats) and the app dock. No
+  buttons and no scrolling, so it stays calm.
+- **Controls:** a tile for each light and switch, grouped by room (rooms A to Z, anything
+  without a room last under *Other*), in the order you picked them within each room. OK
+  switches it on or off, CH + / CH - dims it right on the tile. Up to 48; the page scrolls
+  up and down if they don't all fit.
+- **Cameras:** up to 9, laid out to fill the screen: 1 camera full size, 2 side by side, 3
+  as one large and two small, then 2 by 2, 3 by 2 and 3 by 3. Stills refresh on their own,
+  OK opens the live stream through Home Assistant's HLS.
 - **Clock and wallpapers:** six built-in nature scenes plus your own photos from Home
   Assistant, resized for the TV automatically.
-- **Live sensors (top left):** weather, room temperatures, solar production, doors,
-  thermostats. Up to 6.
-- **Light and switch buttons (above the dock):** toggled with the TV remote, with a
-  brightness bar for dimmable lights. Up to 8.
-- **Cameras (in the dock):** a recent still on the tile, OK opens it full screen through
-  Home Assistant's HLS stream. Up to 2.
-- **Auto-discovery:** on first connection Haven picks sensible defaults. It finds solar from
-  the Energy dashboard, prefers camera sub-streams, and skips diagnostic entities. A picker
-  on the TV lets you change everything, grouped by area.
+- **Auto-discovery:** on first connection Haven picks sensible defaults (weather, a few
+  temperatures, solar, humidity, up to 12 lights and all cameras). It finds solar from the
+  Energy dashboard, prefers camera sub-streams, and skips diagnostic entities. A picker on
+  the TV lets you change everything, grouped by area.
 - **Dark, light or auto theme:** auto follows `sun.sun`.
 - **App dock:** YouTube and the Internet browser by default. Add any installed app from a
   checklist on the TV and put them in your own order; the dock scrolls when it's wider
-  than the screen.
+  than the screen. You can also drop all apps from the dock.
 - **Remote design updates with a safety net:** offline cache, automatic rollback of
   broken updates, and a safe mode.
 
@@ -66,9 +83,10 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
   screen, so the TV's CPU stays mostly idle.
 - **Wallpapers** come from a small Python script on Home Assistant (Pillow ships with HA).
   It writes 1920x1080 copies of your picture folder plus a `list.json` for the TV.
-- **Cameras:** Home Assistant converts each camera's RTSP feed to HLS. Haven plays it with
-  the TV's video element, then falls back to Samsung's AVPlay, then to refreshing
-  snapshots.
+- **Cameras:** the Cameras page shows recent stills from Home Assistant's camera proxy
+  (only while that page is on screen). OK asks Home Assistant to convert the camera's RTSP
+  feed to HLS; Haven plays it with the TV's video element, then falls back to Samsung's
+  AVPlay, then to refreshing snapshots. One live stream at a time.
 
 ## Requirements
 
@@ -233,37 +251,57 @@ it again to reinstall the app.
 
 | Key | Does |
 |---|---|
-| Left / Right | Move along the dock (it scrolls when it's wider than the screen), or along the light and switch buttons |
-| Up / Down | Between the dock and the light and switch buttons |
-| OK | Open an app, camera or settings, or switch the focused light on or off |
-| Up on a dimmable light | Brightness bar: Left / Right in 10 % steps (all the way left is off), OK or Down to close |
-| Left / Right in a camera | Switch to the other camera |
-| Back | Close a panel or camera (nothing on the home screen itself) |
+| Arrows | Move between items on the page (the dock on Home, tiles on Controls and Cameras) |
+| Right on the last item / Left on the first | Focus the round arrow at the side of the screen |
+| Right / Left again, or OK, on the arrow | Slide to the next page (the opposite arrow key goes back to where you were) |
+| OK | Open an app, Edit apps or Settings on Home; switch a light or switch on Controls; open a camera on Cameras |
+| CH + / CH - on a dimmable light (Controls) | Brightness up / down in 10 % steps, shown on the tile (down to 1 %, then off) |
+| Left / Right in a camera | Switch to the previous / next camera |
+| Back | Close a panel or camera; on Controls or Cameras, go back to Home |
 | Yellow | Installed apps and status (design source, HA connection, camera player) |
 | Red, within 6 s of opening | Safe mode: the built-in design |
+
+On a remote without CH keys, Page Up / Page Down do the same (handy in a browser preview).
 
 **Choosing apps:** the **Edit apps** tile (+) in the dock, or Settings > **Apps in the
 dock**:
 - *In the dock* lists your apps in dock order; *Other apps* lists everything else installed
   on the TV, by name. Haven itself and hidden system apps aren't offered.
-- **OK** adds or removes an app.
+- **OK** adds or removes an app. The focus stays where you are, so you can tick several in
+  a row.
+- To have no apps at all, untick them all; the dock keeps only Edit apps and Settings.
 - To reorder, press **Right** on an app in the dock to pick it up, **Up / Down** to move
   it, and **OK** to drop it.
 - Apps show their own icon; apps without one show their initials. YouTube and Internet
   keep their simple symbols unless Settings > Tile icons is set to App icons.
 
-**Brightness:** lights that Home Assistant reports as dimmable show their level on the
-button (for example "Ceiling 60%"), and the first time you focus one, Haven shows the tip
-"Press Up to change the brightness". While you hold Left or Right, the change goes to Home
-Assistant once you stop, not on every step. Lights that only switch on and off say so
-when you press Up.
+**Controls page:**
+- Tiles are grouped by room: rooms A to Z, anything without a room last under *Other*.
+  Within a room they keep the order you ticked them in the picker.
+- A lit tile turns bright; dimmable lights show the level ("On · 60%") and a thin bar.
+- **CH + / CH -** change the focused light's brightness on the tile itself, no pop-up.
+  Holding a key sends one update to Home Assistant when you let go, not one per step. The
+  first time you focus a dimmable light, Haven shows a short tip.
+- Lights that only switch on and off say so if you try to dim them.
+- More than fit on the screen? The page scrolls up and down as you move, with soft edges
+  and small arrows showing there's more.
 
 **Choosing widgets:** Settings (gear tile) > **Home Assistant widgets**. It lists a
 *Suggested* section, then everything else grouped by area, with live values. OK ticks or
-unticks; items appear in the order you tick them. Names are shortened by room, so "Living
-Room Temperature" shows as "Living Room". Rename the entity in HA for a different label.
+unticks; items appear in the order you tick them. Each kind goes to its own page: sensors
+to Home (up to 15), lights and switches to Controls (up to 48), cameras to Cameras (up to
+9). Names are shortened by room, so "Living Room Temperature" shows as "Living Room".
+Rename the entity in HA for a different label.
 
 **Cameras:**
+- The grid adapts to how many you pick: 1 fills the screen, 2 sit side by side, 3 show as
+  one large and two small, then 2 by 2, 3 by 2 and 3 by 3. No scrolling.
+- Stills refresh every 4 seconds with up to 4 cameras. With more, the focused one refreshes
+  every 3 seconds and the others every 12, to keep Home Assistant and the TV relaxed. A
+  small badge shows how old each picture is. Nothing is fetched while you're on another
+  page.
+- OK opens the live stream; Left / Right in the player switch cameras, Back returns to the
+  grid.
 - Prefer the light sub-stream entity (Reolink *Fluent*, Tapo *SD* or *live view*): it
   starts quicker, and every older Samsung decodes it. Use an H.264 stream rather than
   H.265.
@@ -273,8 +311,8 @@ Room Temperature" shows as "Living Room". Rename the entity in HA for a differen
 - The Yellow panel shows which player worked on your TV and the last problem, if any.
 
 **Other settings:** wallpaper interval, wallpaper source (built-in, Home Assistant or both),
-slow motion (off by default, it costs GPU), theme, 12 or 24-hour clock, app icons, and the
-Home Assistant address.
+slow motion (off by default, it costs GPU), theme, 12 or 24-hour clock, app icons,
+and the Home Assistant address.
 
 ## Changing the design
 
@@ -320,7 +358,7 @@ reinstalling, so it becomes the new fallback.
 | TV asks to allow Home Assistant every time | Device Connection Manager > Access Notification > First Time Only |
 | *Not available* when the automation runs | Turn off Autorun Last App |
 | Automation never fires | Trigger on the media_player entity; check History shows off then on |
-| Widgets say "token rejected" | Wrong `haToken` in `shell-config.js`; fix and reinstall |
+| "Home Assistant token rejected" at the top | Wrong `haToken` in `shell-config.js`; fix and reinstall |
 | A camera shows only snapshots | Yellow panel shows why; use the camera's H.264 sub-stream |
 
 ## Security notes
@@ -344,6 +382,7 @@ python tools/serve.py        # fake Home Assistant at http://localhost:8123/loca
 Copy `app/shell-config.example.js` to `app/shell-config.js`, then open
 `app/index.html?base=http://localhost:8123/local/haven/` in Chrome. Keyboard controls:
 - **Arrow keys** move, **Enter** opens, **Esc** closes.
+- **Page Up / Page Down** stand in for CH + / CH - (dimming on Controls).
 - **`Y`** toggles the status panel, **`r`** within 6 seconds is safe mode.
 
 Edit `ha/www/haven/design/*` and watch it update. Add `&ha=http://<HA-IP>:8123&token=<token>`

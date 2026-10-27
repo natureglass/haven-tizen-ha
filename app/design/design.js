@@ -29,16 +29,18 @@
         bulb: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><path d="M50 16 C34 16 24 28 24 41 C24 51 30 57 35 62 C38 65 39 68 39 72 H61 C61 68 62 65 65 62 C70 57 76 51 76 41 C76 28 66 16 50 16 Z"/><path d="M40 81 H60 M43 89 H57"/></svg>',
         power: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"><path d="M50 16 V48"/><path d="M33 27 A30 30 0 1 0 67 27"/></svg>',
         camera: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><rect x="12" y="30" width="54" height="40" rx="9"/><path d="M66 45 L88 33 V67 L66 55 Z"/></svg>',
+        fan: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"><circle cx="50" cy="50" r="7"/><path d="M50 43 C46 26 52 16 62 18 C70 20 66 36 50 43 Z M57 50 C74 46 84 52 82 62 C80 70 64 66 57 50 Z M50 57 C54 74 48 84 38 82 C30 80 34 64 50 57 Z M43 50 C26 54 16 48 18 38 C20 30 36 34 43 50 Z"/></svg>',
         plus: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 24 V76 M24 50 H76"/></svg>'
     };
 
     var KEY = {
         LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13,
         BACK: 10009, YELLOW: 405, IME_DONE: 65376, IME_CANCEL: 65385,
-        ESC: 27, BACKSPACE: 8, Y: 89, EXIT: 10182
+        ESC: 27, BACKSPACE: 8, Y: 89, EXIT: 10182,
+        CH_UP: 427, CH_DOWN: 428, PAGE_UP: 33, PAGE_DOWN: 34   // CH +/- on the remote; Page Up/Down in preview
     };
 
-    var MAX_SENSORS = 6, MAX_BUTTONS = 8, MAX_CAMERAS = 2;
+    var MAX_SENSORS = 15, MAX_BUTTONS = 48, MAX_CAMERAS = 9;
 
     // ------------------------------------------------------------------ settings
 
@@ -97,15 +99,25 @@
         $('stage').innerHTML =
             '<div id="bg"><div class="wall" id="wallA"></div><div class="wall" id="wallB"></div></div>' +
             '<div id="shade"></div>' +
+            '<div id="veil"></div>' +
+            '<div id="pages">' +
+                '<section class="page" id="pageHome">' +
+                    '<section id="sensors" hidden></section>' +
+                    '<nav id="dock"><div id="dockTrack"></div></nav>' +
+                    '<div id="dockMoreL" class="dockMore">&lsaquo;</div><div id="dockMoreR" class="dockMore">&rsaquo;</div>' +
+                    '<div id="caption"></div>' +
+                '</section>' +
+                '<section class="page" id="pageControls">' +
+                    '<section id="ctlArea"><div id="ctlTrack"></div></section>' +
+                    '<div id="ctlMoreU" class="dockMore vmore">&lsaquo;</div><div id="ctlMoreD" class="dockMore vmore">&rsaquo;</div>' +
+                '</section>' +
+                '<section class="page" id="pageCameras"><section id="camArea"></section></section>' +
+            '</div>' +
+            '<div id="tabs"></div>' +
             '<header id="clock"><div id="time">--:--</div><div id="date"></div></header>' +
-            '<section id="sensors" hidden></section>' +
-            '<div id="caption"></div>' +
-            '<div id="chips" hidden></div>' +
-            '<div id="dimmer" hidden><div id="dimName"></div>' +
-                '<div id="dimTrack"><div id="dimFill"></div></div><div id="dimValue"></div>' +
-                '<div id="dimHint">Left / Right to dim &middot; OK or Down to close</div></div>' +
-            '<nav id="dock"><div id="dockTrack"></div></nav>' +
-            '<div id="dockMoreL" class="dockMore">&lsaquo;</div><div id="dockMoreR" class="dockMore">&rsaquo;</div>' +
+            '<div id="haStatus"></div>' +
+            '<div id="edgeL" class="edge l"></div><div id="edgeR" class="edge r"></div>' +
+            '<div id="dots"></div>' +
             '<section id="player" hidden>' +
                 '<img id="camSnap" alt="">' +
                 '<video id="camVideo" hidden></video>' +
@@ -118,7 +130,7 @@
                 '<p class="hint">Up / Down to choose &middot; Left / Right to change &middot; Back to close</p></div></section>' +
             '<section id="picker" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Home Assistant widgets</h2><p id="pickCount" class="hint left"></p><ul id="pickList" class="picklist"></ul>' +
-                '<p class="hint">OK to show or hide &middot; Sensors top left, lights and switches above the dock, cameras in the dock &middot; Back to close</p></div></section>' +
+                '<p class="hint">OK to show or hide &middot; Sensors on Home, lights and switches on Controls, cameras on Cameras &middot; Back to close</p></div></section>' +
             '<section id="apps" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Apps in the dock</h2><p id="appsCount" class="hint left"></p><ul id="appsList" class="picklist"></ul>' +
                 '<p id="appsHint" class="hint"></p></div></section>' +
@@ -505,11 +517,11 @@
     }
 
     function defaultPicks() {
-        var g = ha.groups, sensors = [], picks;
-        sensors = sensors.concat(g.weather.slice(0, 1), g.temps.slice(0, 3),
-            g.solarPower.length ? g.solarPower.slice(0, 1) : g.solarEnergy.slice(0, 1));
-        picks = sensors.slice(0, MAX_SENSORS).concat(g.lights.slice(0, 4), g.cameras.slice(0, MAX_CAMERAS));
-        return picks;
+        // A first set for each page: sensors on Home, lights on Controls, every camera.
+        var g = ha.groups, sensors = [];
+        sensors = sensors.concat(g.weather.slice(0, 1), g.temps.slice(0, 4),
+            g.solarPower.slice(0, 1), g.solarEnergy.slice(0, 1), g.humid.slice(0, 2));
+        return sensors.slice(0, MAX_SENSORS).concat(g.lights.slice(0, 12), g.cameras.slice(0, MAX_CAMERAS));
     }
 
     function haSubscribe() {
@@ -548,7 +560,7 @@
         }
         if (ev.r) { each(ev.r, function (gone) { delete ha.states[gone]; }); }
         renderWidgets();
-        if (ev.a && selectedOf('camera').length) { refreshThumbs(); }
+        if (ev.a && selectedOf('camera').length) { refreshCamStills(); }
         if (cfg.theme === 'auto') { applyTheme(); }
         saveCacheSoon();
     }
@@ -601,7 +613,7 @@
         return { value: num(n, u), unit: u, note: '' };
     }
 
-    var GENERIC = /^(temperature|temp|humidity|sensor|thermometer|climate|thermostat|lights?|switch|plug|socket)$/i;
+    var GENERIC = /^(temperature|temp|sensor|thermometer|climate|thermostat|lights?|switch|plug|socket)$/i;   // "humidity" stays, so it isn't mistaken for the temperature
 
     function displayName(eid) {
         var st = ha.states[eid];
@@ -641,108 +653,309 @@
         return (b === undefined || b === null) ? 100 : Math.max(1, Math.round(b / 2.55));
     }
 
+    // ================================================================== pages
+    //
+    // Three pages side by side that slide: Home (sensor cards + app dock), Controls (lights
+    // and switches as tiles, grouped by room) and Cameras (stills in a grid that adapts to
+    // how many there are). Right on the last item, Left on the first, or OK on the round
+    // arrows at the screen edges, slides to the next page.
+
+    var PAGES = ['Home', 'Controls', 'Cameras'];
+    var page = 0;
+    var sel = ['dock', null, null];           // focus per page: 'dock', 'edge:l', 'edge:r', 'eid:<id>', 'cam:<id>'
+    var selBeforeEdge = [null, null, null];
+    var pageTimer = null;
+
+    function hasSide(p, side) { return side === 'l' ? p > 0 : p < PAGES.length - 1; }
+
+    function showPage(p) {
+        if (p < 0 || p >= PAGES.length || p === page) { return; }
+        var dir = p > page ? 1 : -1;
+        page = p;
+        var s = sel[p];
+        if (!s || s.indexOf('edge:') === 0 || (p > 0 && !itemByKey(p, s))) {
+            var items = itemsOf(p);
+            sel[p] = p === 0 ? 'dock'
+                : (items.length ? items[0].key : 'edge:' + (hasSide(p, dir > 0 ? 'r' : 'l') ? (dir > 0 ? 'r' : 'l') : (dir > 0 ? 'l' : 'r')));
+        }
+        if (p === 0 && dir < 0 && sel[0] === 'dock') { focus = tiles.length - 1; }   // back from Controls: the dock's last tile
+        each(document.querySelectorAll('#pages .page'), function (el) { el.style.visibility = 'visible'; });
+        $('pages').style.transform = 'translate3d(' + (-1920 * p) + 'px,0,0)';
+        clearTimeout(pageTimer);
+        pageTimer = setTimeout(function () {       // only the visible page stays drawn
+            each(document.querySelectorAll('#pages .page'), function (el, i) { el.style.visibility = i === page ? 'visible' : 'hidden'; });
+        }, 450);
+        renderChrome();
+        renderWidgets();
+        refreshCamStills();
+    }
+
+    // Tabs, dots, edge arrows and the darker veil behind Controls and Cameras.
+    function renderChrome() {
+        var t = '', d = '';
+        each(PAGES, function (name, i) {
+            t += '<div class="tab' + (i === page ? ' on' : '') + '">' + name + '</div>';
+            d += '<i' + (i === page ? ' class="on"' : '') + '></i>';
+        });
+        $('tabs').innerHTML = t;
+        $('dots').innerHTML = d;
+        $('veil').className = page ? 'on' : '';
+        $('edgeL').innerHTML = '<span class="chev">&lsaquo;</span><span class="lbl">' + (PAGES[page - 1] || '') + '</span>';
+        $('edgeR').innerHTML = '<span class="lbl">' + (PAGES[page + 1] || '') + '</span><span class="chev">&rsaquo;</span>';
+    }
+
+    // Focusable items of a page, in the page's own coordinates (unaffected by scrolling).
+    function itemsOf(p) {
+        var out = [];
+        var nodes = p === 1 ? document.querySelectorAll('#ctlTrack .ctl') : p === 2 ? document.querySelectorAll('#camArea .camtile') : [];
+        each(nodes, function (el) {
+            out.push({ key: el.getAttribute('data-key'), el: el, x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
+        });
+        return out;
+    }
+
+    function itemByKey(p, key) {
+        var items = itemsOf(p);
+        for (var i = 0; i < items.length; i++) { if (items[i].key === key) { return items[i]; } }
+        return null;
+    }
+
+    function applyFocus() {
+        var s = sel[page];
+        renderDock();
+        $('edgeL').className = 'edge l' + (hasSide(page, 'l') ? '' : ' off') + (s === 'edge:l' ? ' focused' : '');
+        $('edgeR').className = 'edge r' + (hasSide(page, 'r') ? '' : ' off') + (s === 'edge:r' ? ' focused' : '');
+        each(document.querySelectorAll('#ctlTrack .ctl'), function (el) { setFocused(el, page === 1 && el.getAttribute('data-key') === sel[1]); });
+        each(document.querySelectorAll('#camArea .camtile'), function (el) { setFocused(el, page === 2 && el.getAttribute('data-key') === sel[2]); });
+        if (page === 1) { scrollControls(); maybeDimHint(); }
+    }
+
+    function toEdge(side) {
+        if (!hasSide(page, side)) { return; }
+        if (sel[page] && sel[page].indexOf('edge:') !== 0) { selBeforeEdge[page] = sel[page]; }
+        sel[page] = 'edge:' + side;
+        applyFocus();
+    }
+
+    // Arrow keys on Controls and Cameras: the nearest item in that direction. Left / Right
+    // stay in the same row; past the end of a row they go to the round arrow at the edge.
+    function moveSpatial(dx, dy) {
+        var items = itemsOf(page), cur = null, best = null, bestScore = 1e9;
+        each(items, function (it) { if (it.key === sel[page]) { cur = it; } });
+        if (!cur) {
+            if (items.length) { sel[page] = items[0].key; applyFocus(); }
+            else if (dx) { toEdge(dx > 0 ? 'r' : 'l'); }
+            return;
+        }
+        var cx = cur.x + cur.w / 2, cy = cur.y + cur.h / 2;
+        each(items, function (it) {
+            if (it === cur) { return; }
+            var ix = it.x + it.w / 2, iy = it.y + it.h / 2, score;
+            if (dx) {
+                if ((ix - cx) * dx <= 4) { return; }
+                if (!(it.y < cur.y + cur.h - 4 && it.y + it.h > cur.y + 4)) { return; }   // same row only
+                score = Math.abs(ix - cx);
+            } else {
+                if ((iy - cy) * dy <= 4) { return; }
+                var sameColumn = it.x < cur.x + cur.w - 4 && it.x + it.w > cur.x + 4;
+                score = Math.abs(iy - cy) + (sameColumn ? 0 : 1000) + Math.abs(ix - cx) * 0.5;
+            }
+            if (score < bestScore) { bestScore = score; best = it; }
+        });
+        if (best) { sel[page] = best.key; applyFocus(); }
+        else if (dx) { toEdge(dx > 0 ? 'r' : 'l'); }
+    }
+
+    // Keys while the pages are showing (no panel open). Returns false if not used.
+    function onPageKey(k) {
+        var s = sel[page] || '';
+        if (s.indexOf('edge:') === 0) {
+            var right = s === 'edge:r';
+            if (k === KEY.ENTER || (right && k === KEY.RIGHT) || (!right && k === KEY.LEFT)) { showPage(page + (right ? 1 : -1)); }
+            else if ((right && k === KEY.LEFT) || (!right && k === KEY.RIGHT)) {
+                sel[page] = selBeforeEdge[page] && (page === 0 || itemByKey(page, selBeforeEdge[page])) ? selBeforeEdge[page]
+                    : (page === 0 ? 'dock' : (itemsOf(page)[0] || {}).key || s);
+                applyFocus();
+            } else if (isBack(k) && page > 0) { showPage(0); }
+            else if (k !== KEY.UP && k !== KEY.DOWN) { return false; }
+            return true;
+        }
+        if (page === 0) {
+            if (k === KEY.LEFT) { if (focus > 0) { focus--; renderDock(); } }
+            else if (k === KEY.RIGHT) { if (focus < tiles.length - 1) { focus++; renderDock(); } else { toEdge('r'); } }
+            else if (k === KEY.ENTER) { activateTile(tiles[focus]); }
+            else if (isBack(k)) { /* home screen: Back does nothing; Home and Exit still work */ }
+            else { return false; }
+            return true;
+        }
+        if (k === KEY.LEFT) { moveSpatial(-1, 0); }
+        else if (k === KEY.RIGHT) { moveSpatial(1, 0); }
+        else if (k === KEY.UP) { moveSpatial(0, -1); }
+        else if (k === KEY.DOWN) { moveSpatial(0, 1); }
+        else if (isBack(k)) { showPage(0); }
+        else if (page === 1 && k === KEY.ENTER) { if (s.indexOf('eid:') === 0) { toggleEid(s.slice(4)); } }
+        else if (page === 1 && (k === KEY.CH_UP || k === KEY.PAGE_UP)) { nudgeBrightness(1); }
+        else if (page === 1 && (k === KEY.CH_DOWN || k === KEY.PAGE_DOWN)) { nudgeBrightness(-1); }
+        else if (page === 2 && k === KEY.ENTER) { if (s.indexOf('cam:') === 0) { openCamera(s.slice(4)); } }
+        else { return false; }
+        return true;
+    }
+
+    function emptyHtml(what, where) {
+        var why = !H.ha().token ? 'Add a long-lived access token to shell-config.js (see the README) to use Home Assistant.'
+            : 'Choose ' + what + ' in Settings &gt; Home Assistant widgets. They appear on this page' + where + '.';
+        return '<div class="empty">' + why + '</div>';
+    }
+
     // ---------------------------------------------------- rendering
 
-    var chipFocus = 0;
-
     function renderWidgets() {
-        var sensors = selectedOf('sensor'), buttons = selectedOf('button');
         var stale = !ha.connected;
-        var box = $('sensors');
-        var html = '';
-        each(sensors.slice(0, MAX_SENSORS), function (eid) {
-            var f = formatState(eid);
-            html += '<div class="sensor' + (f.dim ? ' dim' : '') + (f.text ? ' text' : '') + '">' +
-                '<div class="val">' + esc(f.value) + (f.unit === '°' ? '°' : (f.unit ? '<span class="unit"> ' + esc(f.unit) + '</span>' : '')) + '</div>' +
-                '<div class="name">' + esc(displayName(eid)) + (f.note ? ' <span class="note">' + esc(f.note) + '</span>' : '') + '</div></div>';
-        });
-        var anyKnown = false;
-        each(sensors, function (eid) { if (ha.states[eid]) { anyKnown = true; } });
-        if (stale && H.ha().token) {
-            html += '<div class="offline">' + (ha.authFailed ? 'Home Assistant token rejected' : 'Home Assistant offline') + '</div>';
-        }
-        box.innerHTML = html;
-        box.hidden = !sensors.length || !anyKnown;
-        box.className = stale ? 'stale' : '';
-
-        var chips = $('chips');
-        var cHtml = '';
-        buttons = buttons.slice(0, MAX_BUTTONS);
-        if (chipFocus >= buttons.length) { chipFocus = Math.max(0, buttons.length - 1); }
-        each(buttons, function (eid, i) {
-            var st = ha.states[eid];
-            var unavailable = !st || st.state === 'unavailable';
-            var dimmable = !unavailable && isDimmable(eid);
-            cHtml += '<div class="chip' + (isOn(eid) ? ' on' : '') + (unavailable ? ' dim' : '') + (dimmable ? ' dimmable' : '') +
-                (row === 'chips' && i === chipFocus ? ' focused' : '') + '" data-eid="' + esc(eid) + '">' +
-                GLYPHS[domainOf(eid) === 'light' ? 'bulb' : 'power'] +
-                '<span class="name">' + esc(displayName(eid)) + '</span>' +
-                (dimmable && isOn(eid) ? '<span class="pct">' + brightnessPct(eid) + '%</span>' : '') + '</div>';
-        });
-        chips.innerHTML = cHtml;
-        chips.hidden = !buttons.length;
-        chips.className = stale ? 'stale' : '';
-        if (!buttons.length && row === 'chips') { row = 'dock'; renderDock(); }
-        if (mode === 'dim') { renderDimmer(); }
-        maybeDimHint();
+        $('haStatus').textContent = stale && H.ha().token ? (ha.authFailed ? 'Home Assistant token rejected' : 'Home Assistant offline') : '';
+        $('haStatus').className = $('haStatus').textContent ? 'show' : '';
+        renderHome(stale);
+        renderControls(stale);
+        renderCameras(stale);
+        applyFocus();
         buildDock();
     }
 
-    // One-time tip the first time a dimmable light is focused.
+    // Home: up to 15 sensor cards, five to a row.
+    function renderHome(stale) {
+        var sensors = selectedOf('sensor').slice(0, MAX_SENSORS), html = '', anyKnown = false;
+        each(sensors, function (eid) {
+            var f = formatState(eid);
+            if (ha.states[eid]) { anyKnown = true; }
+            html += '<div class="scard' + (f.dim ? ' dim' : '') + (f.text ? ' text' : '') + '">' +
+                '<div class="val">' + esc(f.value) + (f.unit === '°' ? '°' : (f.unit ? '<span class="unit">' + esc(f.unit) + '</span>' : '')) + '</div>' +
+                '<div class="name">' + esc(displayName(eid)) + (f.note ? ' <span class="note">' + esc(f.note) + '</span>' : '') + '</div></div>';
+        });
+        var box = $('sensors');
+        box.innerHTML = html;
+        box.hidden = !sensors.length || !anyKnown;
+        box.className = stale ? 'stale' : '';
+    }
+
+    // ---------------------------------------------------- Controls page
+
+    function ctlIcon(eid) {
+        var d = domainOf(eid);
+        return d === 'light' ? 'bulb' : d === 'fan' ? 'fan' : 'power';
+    }
+
+    function ctlState(eid) {
+        var st = ha.states[eid];
+        if (!st) { return '–'; }
+        if (st.state === 'unavailable' || st.state === 'unknown') { return 'Unavailable'; }
+        if (st.state === 'on') { return isDimmable(eid) ? 'On · ' + brightnessPct(eid) + '%' : 'On'; }
+        if (st.state === 'off') { return 'Off'; }
+        return cap(st.state);
+    }
+
+    // Rooms A to Z (no room last, as "Other"), buttons in the order you picked them.
+    function roomsOf(eids) {
+        var byArea = {}, names = [];
+        each(eids, function (eid) {
+            var a = areaOf(eid) || '';
+            if (!byArea[a]) { byArea[a] = []; names.push(a); }
+            byArea[a].push(eid);
+        });
+        names.sort(function (x, y) {
+            if (!x) { return 1; }
+            if (!y) { return -1; }
+            return x.toLowerCase() < y.toLowerCase() ? -1 : 1;
+        });
+        var out = [];
+        each(names, function (a) { out.push({ name: a || 'Other', eids: byArea[a] }); });
+        return out;
+    }
+
+    function renderControls(stale) {
+        var buttons = selectedOf('button').slice(0, MAX_BUTTONS), html = '';
+        if (!buttons.length) {
+            html = emptyHtml('lights and switches', '');
+        } else {
+            each(roomsOf(buttons), function (room) {
+                html += '<div class="room"><h3>' + esc(room.name) + '</h3><div class="ts">';
+                each(room.eids, function (eid) {
+                    var st = ha.states[eid];
+                    var unav = !st || st.state === 'unavailable';
+                    var on = isOn(eid), dimmable = !unav && isDimmable(eid);
+                    html += '<div class="ctl' + (on ? ' on' : '') + (unav ? ' unav' : '') + (dimmable ? ' dimmable' : '') +
+                        '" data-key="eid:' + esc(eid) + '"><div class="ic">' + GLYPHS[ctlIcon(eid)] + '</div>' +
+                        '<div class="txt"><div class="nm">' + esc(displayName(eid)) + '</div><div class="st">' + esc(ctlState(eid)) + '</div></div>' +
+                        (dimmable && on ? '<div class="bar"><b style="width:' + brightnessPct(eid) + '%"></b></div>' : '') + '</div>';
+                });
+                html += '</div></div>';
+            });
+        }
+        $('ctlTrack').innerHTML = html;
+        $('ctlArea').className = stale ? 'stale' : '';
+        var s = sel[1];
+        if (s && s.indexOf('eid:') === 0 && !itemByKey(1, s)) { sel[1] = null; }
+        if (!sel[1] && page === 1) {
+            var items = itemsOf(1);
+            sel[1] = items.length ? items[0].key : 'edge:r';
+        }
+    }
+
+    // Keeps the focused tile (and its room title) in view; fades the edge where more rows continue.
+    function scrollControls() {
+        var box = $('ctlArea'), track = $('ctlTrack');
+        var boxH = box.clientHeight, trackH = track.offsetHeight, y = 0;
+        var it = sel[1] && sel[1].indexOf('eid:') === 0 ? itemByKey(1, sel[1]) : null;
+        if (trackH > boxH && it) {
+            var room = it.el.parentNode.parentNode;
+            var top = it.y - room.offsetTop < 80 ? room.offsetTop : it.y;
+            y = Math.round(boxH / 2 - (top + (it.y + it.h - top) / 2));
+            y = Math.max(boxH - trackH, Math.min(0, y));
+        } else if (trackH > boxH) {
+            y = parseInt((track.style.transform.match(/,\s*(-?\d+)px/) || [0, 0])[1], 10) || 0;
+        }
+        track.style.transform = 'translate3d(0,' + y + 'px,0)';
+        var above = y < 0, below = y + trackH > boxH + 1;
+        $('ctlMoreU').className = 'dockMore vmore' + (above ? ' show' : '');
+        $('ctlMoreD').className = 'dockMore vmore' + (below ? ' show' : '');
+        box.className = box.className.replace(/\s*fade-[tb]/g, '') + (above ? ' fade-t' : '') + (below ? ' fade-b' : '');
+    }
+
+    // One-time tip the first time a dimmable light is focused on Controls.
     function maybeDimHint() {
-        if (row !== 'chips' || mode !== 'dock' || H.get('dimHintShown', false)) { return; }
-        var eid = selectedOf('button').slice(0, MAX_BUTTONS)[chipFocus];
-        if (eid && isDimmable(eid)) {
-            H.set('dimHintShown', true);
-            toast('Press Up to change the brightness', 4000);
+        if (mode !== 'dock' || H.get('dimHintShownCtl', false)) { return; }
+        var s = sel[1];
+        if (s && s.indexOf('eid:') === 0 && isDimmable(s.slice(4))) {
+            H.set('dimHintShownCtl', true);
+            toast('Press CH + / CH - to change the brightness', 4500);
         }
     }
 
     // ---------------------------------------------------- brightness
     //
-    // Up on a dimmable light opens a bar; Left / Right change it in 10 % steps (down to off).
-    // Changes go to HA 350 ms after the last key press, so holding a key sends one update.
+    // CH + / CH - on a dimmable light: 10 % steps, down to 1 %, then off. The tile shows the
+    // level as you press; HA gets one update 350 ms after the last press.
 
-    var dim = { eid: null, pct: 0, timer: null, sent: null };
+    var dim = { eid: null, pct: 0, timer: null, idle: null };
 
-    function openDimmer(i) {
-        var eid = selectedOf('button').slice(0, MAX_BUTTONS)[i];
-        if (!eid) { return; }
-        if (!isDimmable(eid)) { toast(displayName(eid) + ' can only be switched on and off'); return; }
-        if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return; }
-        dim.eid = eid;
-        dim.pct = brightnessPct(eid);
-        mode = 'dim';
-        $('dimmer').hidden = false;
-        renderDimmer();
+    function canDim(eid) {
+        if (!eid) { return false; }
+        if (!isDimmable(eid)) { toast(displayName(eid) + ' can only be switched on and off'); return false; }
+        if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return false; }
+        return true;
     }
 
-    function closeDimmer() {
+    function nudgeBrightness(dir) {
+        var s = sel[1] || '';
+        if (s.indexOf('eid:') !== 0) { return; }
+        var eid = s.slice(4);
+        if (!canDim(eid)) { return; }
+        if (dim.eid !== eid) { flushDimmer(); dim.eid = eid; dim.pct = brightnessPct(eid); }
+        stepDimmer(dir);
+        clearTimeout(dim.idle);
+        dim.idle = setTimeout(function () { flushDimmer(); dim.eid = null; }, 2500);
+    }
+
+    function flushDimmer() {
         if (dim.timer) { clearTimeout(dim.timer); dim.timer = null; sendDimmer(); }
-        $('dimmer').hidden = true;
-        dim.eid = null;
-        mode = 'dock';
-        renderWidgets();
-    }
-
-    function renderDimmer() {
-        if (!dim.eid) { return; }
-        if (!dim.timer && dim.sent === null) { dim.pct = brightnessPct(dim.eid); }   // follow HA when idle
-        $('dimName').textContent = displayName(dim.eid);
-        $('dimFill').style.width = dim.pct + '%';
-        $('dimValue').textContent = dim.pct ? dim.pct + '%' : 'Off';
-        var chip = document.querySelector('#chips .chip.focused'), box = $('dimmer');
-        if (chip) {
-            var center = chip.getBoundingClientRect ? chipCenter(chip) : 960;
-            box.style.left = Math.max(40, Math.min(1920 - 40 - box.offsetWidth, center - box.offsetWidth / 2)) + 'px';
-        }
-    }
-
-    // Chip centre in stage pixels (the stage may be scaled to fit the screen).
-    function chipCenter(chip) {
-        var r = chip.getBoundingClientRect(), s = $('stage').getBoundingClientRect();
-        var scale = s.width / 1920 || 1;
-        return (r.left + r.width / 2 - s.left) / scale;
     }
 
     function stepDimmer(dir) {
@@ -751,7 +964,7 @@
         else { p = p <= 10 ? (p > 1 ? 1 : 0) : Math.ceil(p / 10) * 10 - 10; }
         dim.pct = p;
         var st = ha.states[dim.eid];
-        if (st) {                                       // optimistic, so the chip follows at once
+        if (st) {                                       // optimistic, so the tile follows at once
             st.state = p ? 'on' : 'off';
             if (p) { st.attributes.brightness = Math.round(p * 2.55); }
         }
@@ -763,17 +976,14 @@
     function sendDimmer() {
         var eid = dim.eid, p = dim.pct;
         if (!eid) { return; }
-        dim.sent = p;
         var req = p ? { domain: 'light', service: 'turn_on', service_data: { brightness_pct: p }, target: { entity_id: eid } }
             : { domain: 'light', service: 'turn_off', target: { entity_id: eid } };
         haSend('call_service', req, function (ok, r, err) {
-            dim.sent = null;
             if (!ok) { toast('Could not dim ' + displayName(eid) + ': ' + ((err && err.message) || 'error'), 4000); }
         });
     }
 
-    function toggleChip(i) {
-        var eid = selectedOf('button').slice(0, MAX_BUTTONS)[i];
+    function toggleEid(eid) {
         if (!eid) { return; }
         if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return; }
         var st = ha.states[eid];
@@ -788,6 +998,106 @@
                 renderWidgets();
                 toast('Could not switch ' + displayName(eid) + ': ' + ((err && err.message) || 'error'), 4000);
             });
+    }
+
+    // ---------------------------------------------------- Cameras page
+    //
+    // Up to 9, laid out to use the screen: 1 fills it, 2 side by side, 3 as one large and two
+    // stacked, then 2 x 2, 3 x 2, 3 x 3. Every tile keeps the camera's 16:9 shape.
+
+    var CAM_GAP = 24, CAM_RATIO = 16 / 9;
+    var camSig = '';
+
+    function camLayout(n, W, H) {
+        var G = CAM_GAP, R = CAM_RATIO, i;
+        if (n === 3) {
+            var s = Math.min((W - G) / R / 3 - G / 3, (H - G) / 2);
+            var big = 2 * s + G, bw = big * R, sw = s * R, x0 = (W - (bw + G + sw)) / 2, y0 = (H - big) / 2;
+            return [{ x: x0, y: y0, w: bw, h: big }, { x: x0 + bw + G, y: y0, w: sw, h: s }, { x: x0 + bw + G, y: y0 + s + G, w: sw, h: s }];
+        }
+        var best = null, c;
+        for (c = 1; c <= 3; c++) {
+            var r = Math.ceil(n / c);
+            var w = Math.min((W - (c - 1) * G) / c, ((H - (r - 1) * G) / r) * R);
+            if (!best || w > best.w + 0.5) { best = { c: c, w: w }; }
+        }
+        var cols = best.c, tw = best.w, th = tw / R, rows = Math.ceil(n / cols), rects = [];
+        var ox = (W - (cols * tw + (cols - 1) * G)) / 2, oy = (H - (rows * th + (rows - 1) * G)) / 2;
+        for (i = 0; i < n; i++) {
+            var row = Math.floor(i / cols), col = i % cols, inRow = Math.min(cols, n - row * cols);
+            rects.push({ x: ox + (cols - inRow) * (tw + G) / 2 + col * (tw + G), y: oy + row * (th + G), w: tw, h: th });
+        }
+        return rects;
+    }
+
+    function renderCameras(stale) {
+        var cams = selectedOf('camera').slice(0, MAX_CAMERAS), area = $('camArea');
+        var sig = cams.join(',') + '|' + (stale ? 1 : 0);
+        each(cams, function (eid) { sig += '|' + displayName(eid) + '/' + areaOf(eid); });
+        if (sig === camSig) { return; }
+        camSig = sig;
+        if (!cams.length) {
+            area.innerHTML = emptyHtml('cameras', '');
+        } else {
+            var html = '', rects = camLayout(cams.length, area.clientWidth || 1700, area.clientHeight || 882);
+            each(cams, function (eid, i) {
+                var r = rects[i], url = camStill.url[eid];
+                html += '<div class="camtile' + (r.w < 600 ? ' s' : '') + '" data-key="cam:' + esc(eid) + '" style="left:' + Math.round(r.x) +
+                    'px;top:' + Math.round(r.y) + 'px;width:' + Math.round(r.w) + 'px;height:' + Math.round(r.h) + 'px;' +
+                    (url ? 'background-image:url(&quot;' + esc(url) + '&quot;)' : '') + '">' +
+                    '<div class="ago"></div>' +
+                    '<div class="play"><svg viewBox="0 0 100 100"><path d="M38 26 L76 50 L38 74 Z" fill="currentColor"/></svg></div>' +
+                    '<div class="lbl"><span class="nm">' + esc(displayName(eid)) + '</span><span class="rm">' + esc(areaOf(eid)) + '</span></div></div>';
+            });
+            area.innerHTML = html;
+        }
+        area.className = stale ? 'stale' : '';
+        var s = sel[2];
+        if (s && s.indexOf('cam:') === 0 && !itemByKey(2, s)) { sel[2] = null; }
+        if (!sel[2] && page === 2) {
+            var items = itemsOf(2);
+            sel[2] = items.length ? items[0].key : 'edge:l';
+        }
+        updateCamAges();
+    }
+
+    // Stills refresh only while the Cameras page shows: every 4 s with up to 4 cameras; with
+    // more, the focused one every 3 s and the rest every 12 s, so the TV isn't overloaded.
+    var camStill = { timer: null, last: {}, url: {}, loading: {} };
+
+    function refreshCamStills() {
+        clearTimeout(camStill.timer);
+        if (page !== 2 || mode === 'camera' || document.hidden || !ha.connected) { return; }
+        var cams = selectedOf('camera').slice(0, MAX_CAMERAS), now = Date.now(), many = cams.length > 4;
+        each(cams, function (eid) {
+            var every = many ? (sel[2] === 'cam:' + eid ? 3000 : 12000) : 4000;
+            if (camStill.loading[eid] || (camStill.last[eid] && now - camStill.last[eid] < every - 250)) { return; }
+            var url = snapshotUrl(eid);
+            if (!url) { return; }
+            camStill.loading[eid] = true;
+            var img = new Image();
+            img.onload = function () {
+                camStill.loading[eid] = false;
+                camStill.last[eid] = Date.now();
+                camStill.url[eid] = url;
+                var el = document.querySelector('#camArea .camtile[data-key="cam:' + eid + '"]');
+                if (el) { el.style.backgroundImage = 'url("' + url + '")'; }
+                updateCamAges();
+            };
+            img.onerror = function () { camStill.loading[eid] = false; camStill.last[eid] = Date.now(); };
+            img.src = url;
+        });
+        updateCamAges();
+        camStill.timer = setTimeout(refreshCamStills, 1000);
+    }
+
+    function updateCamAges() {
+        var now = Date.now();
+        each(document.querySelectorAll('#camArea .camtile'), function (el) {
+            var eid = el.getAttribute('data-key').slice(4), t = camStill.last[eid], a = el.querySelector('.ago');
+            var s = t ? Math.max(0, Math.round((now - t) / 1000)) : -1;
+            a.textContent = s < 0 ? 'Loading…' : s < 60 ? s + ' s ago' : Math.round(s / 60) + ' min ago';
+        });
     }
 
     // ---------------------------------------------------- picker
@@ -868,8 +1178,9 @@
                 li.innerHTML = '<span class="box"></span><span class="name"></span><span class="where"></span><span class="val"></span>';
                 li.children[1].textContent = displayName(eid);
                 var kind = kindOf(eid);
-                li.children[2].textContent = (kind === 'button' ? (isDimmable(eid) ? 'Dimmable button' : 'Button') : kind === 'camera' ? 'Camera' : 'Sensor') + ' · ' + eid;
-                li.children[3].textContent = kind === 'camera' ? (f.dim ? '–' : 'Dock tile')
+                li.children[2].textContent = (kind === 'button' ? (isDimmable(eid) ? 'Dimmable light' : eid.indexOf('light.') === 0 ? 'Light' : 'Switch')
+                    : kind === 'camera' ? 'Camera' : 'Sensor') + ' · ' + eid;
+                li.children[3].textContent = kind === 'camera' ? (f.dim ? '–' : cap((ha.states[eid] || {}).state || ''))
                     : f.value + (f.unit ? (f.unit === '°' ? '°' : ' ' + f.unit) : '');
                 frag.appendChild(li);
                 pickItems.push(eid);
@@ -904,7 +1215,10 @@
             list.splice(i, 1);
         } else {
             if (kind === 'sensor' && selectedOf('sensor').length >= MAX_SENSORS) { toast('Up to ' + MAX_SENSORS + ' sensors. Hide one first.'); return; }
-            if (kind === 'button' && selectedOf('button').length >= MAX_BUTTONS) { toast('Up to ' + MAX_BUTTONS + ' lights and switches. Hide one first.'); return; }
+            if (kind === 'button' && selectedOf('button').length >= MAX_BUTTONS) {
+                toast('Up to ' + MAX_BUTTONS + ' lights and switches. Hide one first.', 4000);
+                return;
+            }
             if (kind === 'camera' && selectedOf('camera').length >= MAX_CAMERAS) { toast('Up to ' + MAX_CAMERAS + ' cameras in the dock. Hide one first.'); return; }
             list.push(eid);
         }
@@ -928,7 +1242,6 @@
     // ================================================================== dock
 
     var tiles = [], focus = 0;
-    var row = 'dock';   // dock | chips
     var dockSignature = '';
     var installedApps = null;   // Tizen ApplicationInformation[] once listed
 
@@ -952,7 +1265,7 @@
     }
 
     function renderDock() {
-        each(tiles, function (t, i) { setFocused(t, row === 'dock' && i === focus); });
+        each(tiles, function (t, i) { setFocused(t, page === 0 && sel[0] === 'dock' && i === focus); });
         scrollDock();
     }
 
@@ -973,7 +1286,7 @@
         $('dockMoreR').className = 'dockMore' + (x + trackW > dockW + 1 ? ' show' : '');
     }
 
-    // Your apps in order, the "+" tile, the chosen cameras, then Settings.
+    // Your apps in order, the "+" tile, then Settings.
     // Rebuilt only when that list changes.
     function buildDock() {
         var items = [];
@@ -982,9 +1295,6 @@
             items.push({ app: entry, label: def.name, glyph: def.glyph });
         });
         items.push({ action: 'apps', label: 'Edit apps', glyph: 'plus' });
-        each(selectedOf('camera').slice(0, MAX_CAMERAS), function (eid) {
-            items.push({ camera: eid, label: displayName(eid), glyph: 'camera' });
-        });
         items.push({ action: 'settings', label: 'Settings', glyph: 'gear' });
         var sig = cfg.icons + '|';
         each(items, function (d) { sig += (d.app || d.action || d.camera) + '=' + d.label + ';'; });
@@ -1003,7 +1313,6 @@
         focus = Math.max(0, Math.min(focus, tiles.length - 1));
         renderDock();
         applyIcons();
-        refreshThumbs();
     }
 
     function monogram(name) {
@@ -1014,33 +1323,12 @@
 
     // ------------------------------------------------------------------ camera snapshots
 
-    var thumbTimer = null;
-
     function snapshotUrl(eid) {
         var st = ha.states[eid], info = H.ha();
         var pic = st && st.attributes && st.attributes.entity_picture;
         if (!pic) { return null; }
         var u = /^https?:/i.test(pic) ? pic : info.url + pic;
         return u + (u.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
-    }
-
-    // Small still on each camera tile, refreshed every 2 minutes while the home screen shows.
-    function refreshThumbs() {
-        clearTimeout(thumbTimer);
-        if (document.hidden || !ha.connected) { return; }
-        each(tiles, function (t) {
-            var eid = t.getAttribute('data-camera');
-            var url = eid && snapshotUrl(eid);
-            if (!url) { return; }
-            var img = new Image();
-            img.onload = function () {
-                var face = t.querySelector('.face');
-                face.style.backgroundImage = 'url("' + url + '")';
-                if (face.className.indexOf('thumb') < 0) { face.className += ' thumb'; }
-            };
-            img.src = url;
-        });
-        thumbTimer = setTimeout(refreshThumbs, 120000);
     }
 
     // ------------------------------------------------------------------ camera player
@@ -1229,7 +1517,8 @@
         cam.eid = null;
         mode = 'dock';
         scheduleWalls();
-        refreshThumbs();
+        applyFocus();
+        refreshCamStills();
     }
 
     function switchCamera(dir) {
@@ -1321,8 +1610,9 @@
         }
     }
 
-    function renderApps() {
-        var ul = $('appsList'), keep = appsItems[appsRow];
+    // focusEntry: the item to focus after re-rendering (default: the one focused now).
+    function renderApps(focusEntry) {
+        var ul = $('appsList'), keep = focusEntry !== undefined ? focusEntry : appsItems[appsRow];
         var inDock = dockApps();
         ul.innerHTML = '';
         appsItems = [];
@@ -1402,9 +1692,18 @@
         var entry = appsItems[appsRow];
         if (!entry) { return; }
         var list = dockApps().slice(0), i = list.indexOf(entry);
-        if (i >= 0) { list.splice(i, 1); } else { list.push(entry); }
+        // The app moves to the other section; keep the focus where you were instead of
+        // following it, so several apps can be ticked in a row.
+        var inDock = i >= 0, next = null, k;
+        for (k = appsRow + 1; k < appsItems.length && next === null; k++) {
+            if ((list.indexOf(appsItems[k]) >= 0) === inDock) { next = appsItems[k]; }
+        }
+        for (k = appsRow - 1; k >= 0 && next === null; k--) {
+            if ((list.indexOf(appsItems[k]) >= 0) === inDock) { next = appsItems[k]; }
+        }
+        if (inDock) { list.splice(i, 1); } else { list.push(entry); }
         saveDockApps(list);
-        renderApps();
+        renderApps(next !== null ? next : entry);
     }
 
     function shiftApp(dir) {
@@ -1455,7 +1754,7 @@
         if (def.action === 'widgets') {
             if (!H.ha().token) { return 'No token'; }
             if (!ha.connected) { return ha.authFailed ? 'Token rejected' : 'Not connected'; }
-            return selectedOf('sensor').length + ' sensors, ' + selectedOf('button').length + ' buttons';
+            return selectedOf('sensor').length + ' sensors, ' + selectedOf('button').length + ' controls, ' + selectedOf('camera').length + ' cameras';
         }
         if (def.action === 'apps') { return dockApps().length + (dockApps().length === 1 ? ' app' : ' apps'); }
         if (def.action === 'address') { return shortBase(); }
@@ -1489,7 +1788,7 @@
         var input = $('addr');
         if (input) { input.blur(); }
         mode = 'dock';
-        renderDock();
+        applyFocus();
     }
 
     function changeSetting(dir) {
@@ -1639,29 +1938,12 @@
             if (k === KEY.ENTER || k === KEY.IME_DONE) { closeEditor(true); }
             else if (k === KEY.IME_CANCEL || isBack(k)) { closeEditor(false); }
             else { handled = false; } // let the keyboard type
-        } else if (mode === 'dim') {
-            if (k === KEY.LEFT) { stepDimmer(-1); }
-            else if (k === KEY.RIGHT) { stepDimmer(1); }
-            else if (k === KEY.ENTER || k === KEY.DOWN || isBack(k)) { closeDimmer(); }
         } else if (mode === 'apps') {
             handled = onAppsKey(k);
         } else if (k === KEY.YELLOW || k === KEY.Y) {
             if (mode === 'diag') { closeOverlays(); } else { openDiag(); }
-        } else if (mode === 'dock' && row === 'chips') {
-            var n = selectedOf('button').slice(0, MAX_BUTTONS).length;
-            if (k === KEY.LEFT) { chipFocus = Math.max(0, chipFocus - 1); renderWidgets(); }
-            else if (k === KEY.RIGHT) { chipFocus = Math.min(n - 1, chipFocus + 1); renderWidgets(); }
-            else if (k === KEY.DOWN || isBack(k)) { row = 'dock'; renderWidgets(); renderDock(); }
-            else if (k === KEY.ENTER) { toggleChip(chipFocus); }
-            else if (k === KEY.UP) { openDimmer(chipFocus); }
-            else { handled = false; }
         } else if (mode === 'dock') {
-            if (k === KEY.LEFT) { focus = Math.max(0, focus - 1); renderDock(); }
-            else if (k === KEY.RIGHT) { focus = Math.min(tiles.length - 1, focus + 1); renderDock(); }
-            else if (k === KEY.UP && !$('chips').hidden) { row = 'chips'; renderDock(); renderWidgets(); }
-            else if (k === KEY.ENTER) { activateTile(tiles[focus]); }
-            else if (isBack(k)) { /* home screen: Back does nothing; Home and Exit still work */ }
-            else { handled = false; }
+            handled = onPageKey(k);
         } else if (mode === 'settings') {
             if (k === KEY.UP) { setRow = Math.max(0, setRow - 1); renderSettings(); }
             else if (k === KEY.DOWN) { setRow = Math.min(SETTINGS_DEF.length - 1, setRow + 1); renderSettings(); }
@@ -1694,10 +1976,10 @@
             if (mode === 'camera') { closeCamera(); }
             clearInterval(wallTimer);
             clearTimeout(clockTimer);
-            clearTimeout(thumbTimer);
+            clearTimeout(camStill.timer);
             wallTimer = null;
         } else {
-            refreshThumbs();
+            refreshCamStills();
             tickClock();
             if (Date.now() - haListAt > 5 * 60000) { refreshHaWalls(); }
             scheduleWalls();
@@ -1708,8 +1990,11 @@
     function init() {
         build();
         focus = cfg.focus || 0;
+        renderChrome();
         buildDock();
         H.registerKey('ColorF2Yellow');
+        H.registerKey('ChannelUp');
+        H.registerKey('ChannelDown');
         document.addEventListener('keydown', onKey);
         document.addEventListener('visibilitychange', onVisibility);
         tickClock();

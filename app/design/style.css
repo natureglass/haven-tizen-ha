@@ -34,6 +34,8 @@
     --chip-on-bg: #ffd27a;
     --chip-on-fg: #2a1d00;
     --ok: #8fe3b0;
+    --veil: rgba(4, 8, 16, 0.58);
+    --icon-bg: rgba(255, 255, 255, 0.12);
 }
 
 #stage.theme-light {
@@ -63,6 +65,8 @@
     --chip-on-bg: #ffcf5c;
     --chip-on-fg: #2a1d00;
     --ok: #1d8a52;
+    --veil: rgba(240, 242, 246, 0.6);
+    --icon-bg: rgba(16, 20, 28, 0.08);
 }
 
 #stage {
@@ -113,22 +117,23 @@
 
 #clock {
     position: absolute;
-    top: 60px;
+    top: 46px;
     right: 96px;
     text-align: right;
     text-shadow: var(--text-shadow);
+    z-index: 3;
 }
 
 #time {
-    font-size: 84px;
+    font-size: 50px;
     font-weight: 300;
-    letter-spacing: -1px;
+    letter-spacing: -0.5px;
     line-height: 1;
 }
 
 #date {
-    margin-top: 10px;
-    font-size: 28px;
+    margin-top: 6px;
+    font-size: 21px;
     opacity: 0.85;
 }
 
@@ -141,175 +146,440 @@
     letter-spacing: 0.5px;
 }
 
-/* ---------------------------------------------------------- sensors (top left) */
+
+/* ---------------------------------------------------------- pages */
+
+/* Three 1920 px pages side by side; the strip slides (see showPage). */
+#pages {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    transition: transform 0.4s ease-out;
+    will-change: transform;
+}
+
+.page {
+    position: absolute;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+}
+
+#pageHome { left: 0; }
+#pageControls { left: 1920px; }
+#pageCameras { left: 3840px; }
+
+/* darker backdrop behind Controls and Cameras so the tiles read well */
+#veil {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--veil);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+
+#veil.on { opacity: 1; }
+
+/* page tabs (top centre) and dots (bottom centre) */
+#tabs {
+    position: absolute;
+    top: 40px;
+    left: 50%;
+    display: flex;
+    padding: 6px;
+    background: var(--card-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 40px;
+    transform: translateX(-50%);
+    z-index: 3;
+}
+
+#tabs .tab {
+    padding: 11px 30px;
+    font-size: 23px;
+    border-radius: 30px;
+    color: var(--fg-dim);
+}
+
+#tabs .tab.on {
+    background: var(--focus-bg);
+    color: var(--focus-fg);
+    font-weight: 600;
+}
+
+#dots {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 30px;
+    display: flex;
+    justify-content: center;
+    z-index: 3;
+}
+
+#dots i {
+    width: 12px;
+    height: 12px;
+    margin: 0 6px;
+    border-radius: 6px;
+    background: var(--fg-dim);
+    opacity: 0.6;
+    transition: width 0.3s ease;
+}
+
+#dots i.on { width: 34px; background: var(--fg); opacity: 0.95; }
+
+/* round page arrows at the screen edges; focused they show where they lead */
+.edge {
+    position: absolute;
+    top: 510px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 60px;
+    min-width: 60px;
+    box-sizing: border-box;
+    padding: 0 0 4px;
+    background: var(--card-bg);
+    color: var(--fg);
+    border: 2px solid var(--card-border);
+    border-radius: 30px;
+    font-size: 22px;
+    z-index: 3;
+    transition: transform 0.18s ease-out;
+}
+
+.edge.l { left: 22px; }
+.edge.r { right: 22px; }
+.edge.off { display: none; }
+.edge .chev { font-size: 46px; line-height: 40px; }
+.edge .lbl { display: none; padding-top: 4px; }
+
+.edge.focused {
+    padding: 0 22px 4px;
+    background: var(--focus-bg);
+    border-color: var(--focus-bg);
+    color: var(--focus-fg);
+    transform: scale(1.08);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+}
+
+.edge.focused .lbl { display: inline; }
+.edge.l.focused .lbl { margin-left: 8px; }
+.edge.r.focused .lbl { margin-right: 8px; }
+
+/* "Home Assistant offline" next to the tabs */
+#haStatus {
+    position: absolute;
+    top: 52px;
+    left: 96px;
+    padding: 9px 18px;
+    background: var(--card-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 22px;
+    font-size: 19px;
+    color: var(--fg-dim);
+    z-index: 3;
+}
+
+#haStatus:empty { display: none; }
+
+.empty {
+    position: absolute;
+    left: 50%;
+    top: 40%;
+    width: 900px;
+    padding: 30px 40px;
+    background: var(--card-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 24px;
+    font-size: 26px;
+    line-height: 1.4;
+    text-align: center;
+    color: var(--fg-dim);
+    transform: translate(-50%, -50%);
+}
+
+/* ---------------------------------------------------------- Home: sensor cards (5 x 3) */
 
 #sensors {
     position: absolute;
-    top: 56px;
     left: 96px;
-    min-width: 380px;
-    max-width: 640px;
-    padding: 16px 30px;
-    background: var(--card-bg);
-    border: 2px solid var(--card-border);
-    border-radius: 26px;
+    top: 150px;
+    width: 1740px;
+    display: flex;
+    flex-wrap: wrap;
     transition: opacity 0.4s ease;
 }
 
 #sensors.stale { opacity: 0.6; }
 
-.sensor {
+.scard {
+    width: 330px;
+    height: 132px;
+    margin: 0 18px 18px 0;
+    box-sizing: border-box;
+    padding: 18px 22px;
     display: flex;
-    align-items: baseline;
-    padding: 8px 0;
+    flex-direction: column;
+    justify-content: space-between;
+    background: var(--card-bg);
+    border: 2px solid var(--card-border);
+    border-radius: 22px;
 }
 
-.sensor .val {
-    width: 170px;
-    flex-shrink: 0;
-    font-size: 42px;
+.scard .val {
+    font-size: 46px;
     font-weight: 300;
-    line-height: 1.1;
+    line-height: 1;
     white-space: nowrap;
 }
 
-.sensor.text .val { font-size: 32px; font-weight: 400; }
+.scard.text .val { font-size: 34px; font-weight: 400; }
 
-.sensor .unit {
+.scard .unit {
+    margin-left: 6px;
     font-size: 24px;
     color: var(--fg-dim);
 }
 
-.sensor .name {
-    font-size: 24px;
+.scard .name {
+    font-size: 21px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.sensor .note {
-    margin-left: 6px;
-    color: var(--fg-dim);
-}
+.scard .note { color: var(--fg-dim); }
+.scard.dim { opacity: 0.45; }
 
-.sensor.dim { opacity: 0.45; }
+/* ---------------------------------------------------------- Controls: tiles grouped by room */
 
-#sensors .offline {
-    margin-top: 6px;
-    padding-top: 10px;
-    border-top: 1px solid var(--card-border);
-    font-size: 20px;
-    color: var(--fg-dim);
-}
-
-/* ---------------------------------------------------------- light / switch chips */
-
-#chips {
+#ctlArea {
     position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 440px;
-    display: flex;
-    justify-content: center;
+    left: 110px;
+    right: 110px;
+    top: 132px;
+    bottom: 76px;
+    overflow: hidden;
     transition: opacity 0.4s ease;
 }
 
-#chips.stale { opacity: 0.6; }
+#ctlArea.stale { opacity: 0.6; }
+#ctlArea.fade-t { -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 100%); }
+#ctlArea.fade-b { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 93%, transparent 100%); }
+#ctlArea.fade-t.fade-b { -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 93%, transparent 100%); }
 
-.chip {
+#ctlTrack {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    padding: 16px 14px;
     display: flex;
-    align-items: center;
-    height: 64px;
-    margin: 0 9px;
-    padding: 0 26px 0 18px;
-    background: var(--chip-bg);
+    flex-wrap: wrap;
+    align-items: flex-start;
+    transition: transform 0.25s ease-out;
+    will-change: transform;
+}
+
+.room { margin: 0 44px 26px 0; }
+
+.room h3 {
+    margin: 0 0 14px 4px;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+}
+
+/* six tiles per line at most, then a room wraps onto the next line */
+.room .ts {
+    display: flex;
+    flex-wrap: wrap;
+    max-width: 1600px;
+}
+
+.ctl {
+    position: relative;
+    width: 248px;
+    height: 188px;
+    margin: 0 18px 18px 0;
+    box-sizing: border-box;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: var(--card-bg);
     border: 2px solid var(--card-border);
-    border-radius: 32px;
-    color: var(--chip-fg);
-    font-size: 24px;
-    white-space: nowrap;
+    border-radius: 26px;
     transition: transform 0.18s ease-out, background-color 0.18s ease-out, box-shadow 0.18s ease-out;
     will-change: transform;
 }
 
-.chip .glyph { width: 34px; height: 34px; margin-right: 10px; }
-.chip .name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.chip .pct { margin-left: 10px; font-size: 20px; opacity: 0.75; }
-
-/* brightness bar above the focused light */
-#dimmer {
-    position: absolute;
-    bottom: 530px;
-    left: 760px;
-    width: 400px;
-    padding: 20px 26px 16px;
-    background: var(--panel-bg);
-    color: var(--panel-fg);
-    border: 2px solid var(--panel-border);
-    border-radius: 22px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-    z-index: 4;
+.ctl .ic {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
+    background: var(--icon-bg);
 }
 
-#dimName {
-    font-size: 26px;
-    margin-bottom: 14px;
+.ctl .ic .glyph { width: 32px; height: 32px; }
+
+.ctl .nm {
+    font-size: 25px;
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding-right: 90px;
 }
 
-#dimValue {
+.ctl .st {
+    margin-top: 2px;
+    font-size: 20px;
+    color: var(--fg-dim);
+}
+
+.ctl .bar {
     position: absolute;
-    top: 18px;
-    right: 26px;
-    font-size: 28px;
-    font-weight: 600;
-}
-
-#dimTrack {
-    height: 18px;
-    background: var(--panel-soft);
-    border: 2px solid var(--panel-border);
-    border-radius: 10px;
+    left: 22px;
+    right: 22px;
+    bottom: 14px;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.16);
     overflow: hidden;
 }
 
-#dimFill {
+.ctl .bar b {
+    display: block;
     height: 100%;
-    width: 0;
-    background: var(--chip-on-bg);
-    border-radius: 8px;
+    background: var(--chip-on-fg);
+    opacity: 0.55;
     transition: width 0.15s ease-out;
 }
 
-#dimHint {
-    margin-top: 12px;
-    font-size: 18px;
-    color: var(--panel-dim);
-}
-
-.chip.on {
+.ctl.on {
     background: var(--chip-on-bg);
     border-color: var(--chip-on-bg);
     color: var(--chip-on-fg);
 }
 
-.chip.dim { opacity: 0.5; }
+.ctl.on .ic { background: rgba(255, 255, 255, 0.55); }
+.ctl.on .st { color: inherit; opacity: 0.75; }
+.ctl.unav { opacity: 0.45; }
 
-.chip.focused {
-    transform: scale(1.12);
-    box-shadow: 0 0 0 4px var(--focus-bg), 0 18px 40px rgba(0, 0, 0, 0.35);
+.ctl.focused {
+    transform: scale(1.07);
+    box-shadow: 0 0 0 5px var(--focus-bg), 0 24px 54px rgba(0, 0, 0, 0.45);
+    z-index: 2;
 }
+
+/* up / down arrows when more rooms are above or below */
+.dockMore.vmore { right: 24px; transform: rotate(90deg); }
+#ctlMoreU { top: 140px; bottom: auto; }
+#ctlMoreD { bottom: 90px; }
+
+/* ---------------------------------------------------------- Cameras: adaptive grid */
+
+#camArea {
+    position: absolute;
+    left: 110px;
+    right: 110px;
+    top: 150px;
+    bottom: 74px;
+}
+
+#camArea.stale { opacity: 0.6; }
+
+.camtile {
+    position: absolute;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: #111 center / cover no-repeat;
+    border: 2px solid var(--card-border);
+    border-radius: 22px;
+    color: #fff;
+    transition: transform 0.18s ease-out, box-shadow 0.18s ease-out;
+    will-change: transform;
+}
+
+.camtile .lbl {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 40px 22px 16px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
+}
+
+.camtile .nm { font-size: 26px; font-weight: 500; }
+.camtile .rm { font-size: 19px; opacity: 0.7; }
+
+.camtile .ago {
+    position: absolute;
+    right: 14px;
+    top: 12px;
+    padding: 5px 12px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.55);
+    font-size: 17px;
+}
+
+.camtile .play {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 96px;
+    height: 96px;
+    margin: -48px 0 0 -48px;
+    border-radius: 48px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #111;
+}
+
+.camtile .play svg { width: 46px; height: 46px; }
+
+.camtile.focused {
+    border-color: var(--focus-bg);
+    box-shadow: 0 0 0 5px var(--focus-bg), 0 26px 60px rgba(0, 0, 0, 0.5);
+    z-index: 2;
+}
+
+.camtile.focused .play { display: flex; }
+
+/* smaller tiles (3 x 2 and up) */
+.camtile.s .nm { font-size: 21px; }
+.camtile.s .rm { font-size: 16px; }
+.camtile.s .lbl { padding: 30px 16px 12px; }
+.camtile.s .ago { font-size: 14px; padding: 3px 9px; }
+.camtile.s .play { width: 70px; height: 70px; margin: -35px 0 0 -35px; }
+.camtile.s .play svg { width: 34px; height: 34px; }
+.camtile.s.focused { transform: scale(1.03); }
 
 /* ---------------------------------------------------------- dock */
 
 /* The track slides sideways when there are more tiles than fit (see scrollDock). */
 #dock {
     position: absolute;
-    left: 80px;
-    right: 80px;
+    left: 110px;
+    right: 110px;
     bottom: 150px;
     height: 300px;
 }
@@ -382,27 +652,6 @@
 
 .tile.add .face { border-style: dashed; }
 .tile.add.focused .face { border-style: solid; }
-
-/* camera tiles show a recent still from the camera */
-.tile.cam .face {
-    overflow: hidden;
-    background-size: cover;
-    background-position: center;
-}
-
-.tile.cam .face.thumb .glyph {
-    position: absolute;
-    right: 14px;
-    bottom: 12px;
-    width: 40px;
-    height: 40px;
-    padding: 6px;
-    color: #fff;
-    background: rgba(0, 0, 0, 0.45);
-    border-radius: 12px;
-}
-
-.tile.cam.focused .face.thumb { box-shadow: 0 0 0 5px var(--focus-bg), 0 28px 60px rgba(0, 0, 0, 0.45); }
 
 .tile .face {
     position: relative;
@@ -764,11 +1013,13 @@
 /* AVPlay draws behind the page: everything above it must be see-through */
 #stage.avplay-on #bg,
 #stage.avplay-on #shade,
+#stage.avplay-on #veil,
+#stage.avplay-on #pages,
+#stage.avplay-on #tabs,
 #stage.avplay-on #clock,
-#stage.avplay-on #sensors,
-#stage.avplay-on #caption,
-#stage.avplay-on #chips,
-#stage.avplay-on #dock,
+#stage.avplay-on #haStatus,
+#stage.avplay-on .edge,
+#stage.avplay-on #dots,
 #stage.avplay-on #camSnap,
 #stage.avplay-on #camVideo { visibility: hidden; }
 
@@ -779,7 +1030,7 @@
 #toast {
     position: absolute;
     left: 50%;
-    top: 24px;
+    top: 124px;
     max-width: 1100px;
     padding: 18px 34px;
     background: var(--toast-bg);
