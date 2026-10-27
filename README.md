@@ -1,10 +1,11 @@
 # Haven
 
-A Home Assistant powered home screen for Samsung Tizen TVs. Four pages you slide between
-with the remote: **Home** (your apps and up to 15 sensors), **Controls** (lights and switches
-by room, with dimming), **Weather** (the week ahead, in one of two styles) and **Cameras**
-(up to 9 live cameras in an adaptive grid). The design lives on Home Assistant, so you
-change it there and the TV updates itself.
+A Home Assistant powered home screen for Samsung Tizen TVs. Pages you slide between with
+the remote: **Home** (your apps and up to 30 sensors), **Controls** (lights and switches by
+room, with dimming), **Weather** (the week ahead, in one of two styles), **Cameras** (up to 9
+live cameras in an adaptive grid) and **Library** (your Jellyfin movies, with a player). You
+pick which ones show and in what order. The design lives on Home Assistant, so you change it
+there and the TV updates itself.
 
 ![Haven Home page, dark theme](docs/screenshots/home-dark.jpg)
 
@@ -20,6 +21,10 @@ change it there and the TV updates itself.
 |---|---|
 | ![Three cameras](docs/screenshots/cameras-3.jpg) | ![Light theme](docs/screenshots/home-light.jpg) |
 
+| Toolbar: Up from any page, the gear opens Settings | Home with 30 sensors and no apps |
+|---|---|
+| ![Toolbar](docs/screenshots/toolbar.jpg) | ![30 sensors](docs/screenshots/home-sensors.jpg) |
+
 | Settings | Widget picker |
 |---|---|
 | ![Settings](docs/screenshots/settings.jpg) | ![Widget picker](docs/screenshots/widget-picker.jpg) |
@@ -32,9 +37,9 @@ change it there and the TV updates itself.
 |---|---|
 | ![Player](docs/screenshots/player.jpg) | ![Audio and subtitle picker](docs/screenshots/player-tracks.jpg) |
 
-| Jellyfin: signed in, with what this TV can play | |
+| Jellyfin: signed in, with what this TV can play | Settings > Screens: which pages, in what order |
 |---|---|
-| ![Jellyfin settings](docs/screenshots/jellyfin.jpg) | |
+| ![Jellyfin settings](docs/screenshots/jellyfin.jpg) | ![Screens](docs/screenshots/screens.jpg) |
 
 *Screenshots use sample data.*
 
@@ -47,13 +52,18 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
 
 ## Features
 
-- **Four pages:** Home, Controls, Weather and Cameras, in that order (plus Library when
-  you sign in to Jellyfin). Tabs at the top, dots at the bottom and a
-  round arrow at each side show where you are. Press Right on the last item (or Left on the
-  first) to reach the arrow, then Right / Left again or OK to slide to the next page.
-- **Home:** clock, wallpaper, up to 15 live sensor cards (5 by 3: weather, room
-  temperatures, solar production, humidity, doors, thermostats) and the app dock. No
-  buttons and no scrolling, so it stays calm.
+- **Pages:** Home, Controls, Weather, Cameras and Library (once you sign in to Jellyfin).
+  Settings > **Screens** chooses which ones show and in what order; Home is always first.
+- **Toolbar:** the bar at the top holds the Settings gear and a tab for each page. Press
+  **Up** from the top of any page to reach it, Left / Right to go to another page (it slides
+  as you move), OK or Down to go into the page, OK on the gear for Settings. Dots at the
+  bottom and a round arrow at each side also show where you are: Right on the last item (or
+  Left on the first) reaches the arrow, then Right / Left again or OK slides to the next page.
+- **Home:** clock, wallpaper, up to 30 live sensor cards (six to a row: weather, room
+  temperatures, solar production, humidity, doors, thermostats) and the app dock. Without
+  apps in the dock, the cards fill the screen (all 30 fit). With the dock, three rows show
+  and the rest scroll: Up from the dock moves into the cards, a bar at the side shows where
+  you are, and Up from the top row reaches the toolbar.
 - **Controls:** a tile for each light and switch, grouped by room (rooms A to Z, anything
   without a room last under *Other*), in the order you picked them within each room. OK
   switches it on or off, CH + / CH - dims it right on the tile. Up to 48; the page scrolls
@@ -284,25 +294,27 @@ it again to reinstall the app.
 
 | Key | Does |
 |---|---|
-| Arrows | Move between items on the page (the dock on Home, tiles on Controls and Cameras) |
+| Arrows | Move between items on the page (the dock and sensors on Home, tiles on Controls and Cameras) |
+| Up from the top of a page | The toolbar: Left / Right for another page, OK on the gear for Settings, Down to go back into the page |
 | Right on the last item / Left on the first | Focus the round arrow at the side of the screen |
 | Right / Left again, or OK, on the arrow | Slide to the next page (the opposite arrow key goes back to where you were) |
-| OK | Open an app or Settings on Home; switch a light or switch on Controls; open a camera on Cameras |
+| OK | Open an app on Home; switch a light or switch on Controls; open a camera on Cameras |
 | Left / Right on Weather | Move along the days; the large card shows the focused day |
 | CH + / CH - on a dimmable light (Controls) | Brightness up / down in 10 % steps, shown on the tile (down to 1 %, then off) |
 | Left / Right in a camera | Switch to the previous / next camera |
-| Back | Close a panel or camera; on Controls, Weather or Cameras, go back to Home |
+| Back | Close a panel or camera; on any other page, go back to Home |
 | Yellow | Installed apps and status (design source, HA connection, camera player) |
 | Red, within 6 s of opening | Safe mode: the built-in design |
 
 On a remote without CH keys, Page Up / Page Down do the same (handy in a browser preview).
 
-**Choosing apps:** Settings (the gear tile at the end of the dock) > **Apps in the dock**:
+**Choosing apps:** Settings (the gear in the toolbar) > **Apps in the dock**:
 - *In the dock* lists your apps in dock order; *Other apps* lists everything else installed
   on the TV, by name. Haven itself and hidden system apps aren't offered.
 - **OK** adds or removes an app. The focus stays where you are, so you can tick several in
   a row.
-- To have no apps at all, untick them all; the dock keeps only Settings.
+- To have no apps at all, untick them all: the sensors take the whole screen, and the focus
+  starts on the toolbar.
 - To reorder, press **Right** on an app in the dock to pick it up, **Up / Down** to move
   it, and **OK** to drop it.
 - Apps show their own icon; apps without one show their initials. YouTube and Internet
@@ -319,10 +331,15 @@ On a remote without CH keys, Page Up / Page Down do the same (handy in a browser
 - More than fit on the screen? The page scrolls up and down as you move, with soft edges
   and small arrows showing there's more.
 
-**Choosing widgets:** Settings (gear tile) > **Home Assistant widgets**. It lists a
+**Choosing screens:** Settings > **Screens** lists Home (always first) and the other four
+in their order. **OK** shows or hides one; **Right** picks it up, **Up / Down** move it, **OK**
+drops it. The toolbar, the dots and sliding follow at once. Library only appears while you're
+signed in to Jellyfin.
+
+**Choosing widgets:** Settings > **Home Assistant widgets**. It lists a
 *Suggested* section, then everything else grouped by area, with live values. OK ticks or
 unticks; items appear in the order you tick them. Each kind goes to its own page: sensors
-to Home (up to 15), lights and switches to Controls (up to 48), cameras to Cameras (up to
+to Home (up to 30), lights and switches to Controls (up to 48), cameras to Cameras (up to
 9). Names are shortened by room, so "Living Room Temperature" shows as "Living Room".
 Rename the entity in HA for a different label.
 
@@ -381,8 +398,8 @@ Rename the entity in HA for a different label.
 - **Modes:** *Holidays, seasons and weather* (default), *Holidays and seasons*, *Weather
   only*, or *Off*.
 - **Testing:** *All + frame rate* adds a small counter at the bottom left (frames per second
-  now, and the lowest second of the last 10). The *Preview* options show any one effect
-  right now, with the counter; the New Year preview also runs a 10-second countdown.
+  now, and the lowest second of the last 10); no other option shows it. The *Preview*
+  options show any one effect right now; the New Year preview also runs a 10-second countdown.
 - **How it stays light:** every particle (70 for snow, around 100 for heavy rain or
   fireworks) is drawn once and moved only by the TV's compositor with CSS transforms. No
   canvas, no blur. Fog is the heaviest, so check it with the counter if your TV is older.
@@ -413,8 +430,8 @@ Rename the entity in HA for a different label.
   mid-film.
 - **Highest resolution:** *Auto* uses the panel (4K or 1080p); 1080p or 720p save bandwidth.
 - **Languages:** audio and subtitle preferences come from each user's Jellyfin profile.
-- **Library page:** shown while you're signed in; Settings > Jellyfin > *Library page* >
-  Hide removes it without signing out.
+- **Library page:** shown while you're signed in. To hide it or move it without signing out,
+  use Settings > Screens.
 - The Yellow panel shows the Jellyfin server, user and conversion setting.
 
 **Library:** the fifth page, after Cameras.
@@ -459,7 +476,7 @@ Rename the entity in HA for a different label.
 
 **Other settings:** wallpaper interval, wallpaper source (built-in, Home Assistant or both),
 slow motion (off by default, it costs GPU), weather style, theme, 12 or 24-hour clock, app icons,
-and the Home Assistant address.
+wallpaper names, and the Home Assistant address.
 
 ## Changing the design
 
@@ -508,7 +525,7 @@ reinstalling, so it becomes the new fallback.
 | "Home Assistant token rejected" at the top | Wrong `haToken` in `shell-config.js`; fix and reinstall |
 | Jellyfin: "No Jellyfin server answered" | Check the address and port (8096); the TV and the server must be on the same network |
 | Jellyfin: Quick Connect "turned off on this server" | Jellyfin Dashboard > Quick Connect > enable, or sign in with a password |
-| No Library page | Sign in under Settings > Jellyfin, and check *Library page* is set to Show |
+| No Library page | Sign in under Settings > Jellyfin, and check Library is ticked in Settings > Screens |
 | Library: a title says it needs video conversion | The TV can't play that video format; allow *Audio and video* in Settings > Jellyfin, or use a server with a GPU |
 | Player: "Direct play didn't work on this TV" | The file is repackaged by Jellyfin instead; nothing to do. The Yellow panel shows the reason |
 | Player: long wait at the start of a converted title | The server is converting; on a Pi keep *Server conversion* on *Audio only* |

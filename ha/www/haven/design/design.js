@@ -41,7 +41,7 @@
         PLAY: 415, PAUSE: 19, PLAYPAUSE: 10252, STOP: 413, FF: 417, RW: 412, SPACE: 32   // media keys; Space in preview
     };
 
-    var MAX_SENSORS = 15, MAX_BUTTONS = 48, MAX_CAMERAS = 9;
+    var MAX_SENSORS = 30, MAX_BUTTONS = 48, MAX_CAMERAS = 9;
 
     // ------------------------------------------------------------------ settings
 
@@ -57,6 +57,7 @@
         { key: 'clock24', label: 'Clock', options: [[true, '24-hour'], [false, '12-hour']] },
         { key: 'icons', label: 'Tile icons', options: [['simple', 'Simple'], ['original', 'App icons']] },
         { key: 'captions', label: 'Wallpaper names', options: [[true, 'Show'], [false, 'Hide']] },
+        { key: '_screens', label: 'Screens', action: 'screens' },
         { key: '_apps', label: 'Apps in the dock', action: 'apps' },
         { key: '_widgets', label: 'Home Assistant widgets', action: 'widgets' },
         { key: '_jellyfin', label: 'Jellyfin', action: 'jellyfin' },
@@ -68,10 +69,12 @@
     // widgets: entity IDs in display order; null = never chosen, so suggestions get picked.
     // dockApps: app IDs in dock order; null = never chosen, so YouTube and Internet are used.
     var DEFAULTS = { interval: 60, source: 'both', motion: false, season: 'auto', wxStyle: 'a', jfConvert: 'audio', jfMaxRes: 'auto', jfLibrary: 'show', theme: 'dark', clock24: true,
-        icons: 'simple', captions: true, focus: 0, widgets: null, dockApps: null };
+        icons: 'simple', captions: true, focus: 0, widgets: null, dockApps: null, screens: null, screensOff: null };
     var cfg = {};
     (function () {
         for (var k in DEFAULTS) { if (DEFAULTS.hasOwnProperty(k)) { cfg[k] = H.get(k, DEFAULTS[k]); } }
+        // Settings > Jellyfin > Library page: Hide (before Settings > Screens existed)
+        if (cfg.screensOff === null && cfg.jfLibrary === 'hide') { cfg.screensOff = ['library']; }
     }());
 
     function save(key) { H.set(key, cfg[key]); }
@@ -108,7 +111,7 @@
             '<div id="veil"></div>' +
             '<div id="pages">' +
                 '<section class="page" id="pageHome">' +
-                    '<section id="sensors" hidden></section>' +
+                    '<section id="senBox" hidden><div id="sensors"></div></section><div id="senBar"><b></b></div>' +
                     '<nav id="dock"><div id="dockTrack"></div></nav>' +
                     '<div id="dockMoreL" class="dockMore">&lsaquo;</div><div id="dockMoreR" class="dockMore">&rsaquo;</div>' +
                     '<div id="caption"></div>' +
@@ -117,7 +120,7 @@
                     '<section id="ctlArea"><div id="ctlTrack"></div></section>' +
                     '<div id="ctlMoreU" class="dockMore vmore">&lsaquo;</div><div id="ctlMoreD" class="dockMore vmore">&rsaquo;</div>' +
                 '</section>' +
-                '<section class="page" id="pageWeather"><section id="wxArea"></section></section>' +     // pages in PAGES order
+                '<section class="page" id="pageWeather"><section id="wxArea"></section></section>' +     // pages in id order (P_HOME .. P_LIB); where each sits on screen comes from ORDER
                 '<section class="page" id="pageCameras"><section id="camArea"></section></section>' +
                 '<section class="page" id="pageLibrary"><section id="libArea"></section><section id="libDetail"></section></section>' +
             '</div>' +
@@ -153,6 +156,9 @@
             '<section id="picker" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Home Assistant widgets</h2><p id="pickCount" class="hint left"></p><ul id="pickList" class="picklist"></ul>' +
                 '<p class="hint">OK to show or hide &middot; Sensors on Home, lights and switches on Controls, cameras on Cameras &middot; Back to close</p></div></section>' +
+            '<section id="screens" class="overlay" hidden><div class="panel">' +
+                '<h2>Screens</h2><p class="hint left">The screens you slide between, in this order. Home is always first.</p>' +
+                '<ul id="scrList" class="picklist"></ul><p id="scrHint" class="hint"></p></div></section>' +
             '<section id="apps" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Apps in the dock</h2><p id="appsCount" class="hint left"></p><ul id="appsList" class="picklist"></ul>' +
                 '<p id="appsHint" class="hint"></p></div></section>' +
@@ -784,7 +790,7 @@
         var c = jfDetectCaps();
         jfp.items = [
             { type: 'info', label: 'Server', value: jfShortHost(jf.url) + (jf.version ? ' · Jellyfin ' + jf.version : '') + ' · signed in as ' + jf.userName },
-            { type: 'option', key: 'jfLibrary', label: 'Library page', options: [['show', 'Show'], ['hide', 'Hide']] },
+            { type: 'info', label: 'Library page', value: (screenOn(P_LIB) ? 'Shown' : 'Hidden') + ' · Settings > Screens to change' },
             { type: 'option', key: 'jfConvert', label: 'Server conversion', options: JF_CONVERT },
             { type: 'option', key: 'jfMaxRes', label: 'Highest resolution',
               options: [['auto', 'Auto (this TV: ' + (c.uhd ? '4K' : '1080p') + ')'], ['1080', '1080p'], ['720', '720p']] },
@@ -1088,7 +1094,7 @@
 
     function fxPlanNow() {
         var mode = cfg.season === 'on' ? 'p:snow' : cfg.season, calm = { level: 0, dir: 1 };
-        var plan = { name: null, why: '', wind: calm, tint: false, meter: mode === 'fps' || mode.indexOf('p:') === 0 };
+        var plan = { name: null, why: '', wind: calm, tint: false, meter: mode === 'fps' };   // the counter: only with All + frame rate
         if (mode === 'off') { return plan; }
         if (mode.indexOf('p:') === 0) {
             var p = mode.slice(2);
@@ -1878,18 +1884,63 @@
     // how many there are). Right on the last item, Left on the first, or OK on the round
     // arrows at the screen edges, slides to the next page.
 
-    var PAGES = ['Home', 'Controls', 'Weather', 'Cameras'];
-    var P_CTL = 1, P_WX = 2, P_CAM = 3;           // page numbers by name, so the order is set in one place
+    // A page's number is its identity (and its place in #pages); ORDER is what's shown, left to right
+    // (Settings > Screens). Home is always there and always first.
+    var PAGE_NAMES = ['Home', 'Controls', 'Weather', 'Cameras', 'Library'];
+    var PAGE_KEYS = ['home', 'controls', 'weather', 'cameras', 'library'];
+    var P_HOME = 0, P_CTL = 1, P_WX = 2, P_CAM = 3;
+    var ORDER = [0, 1, 2, 3];
+    var tabFocus = null;      // the toolbar at the top has the focus: 0 = the gear, 1.. = ORDER[n - 1]
+    var tabsSig = '';
     var page = 0;
     var sel = ['dock', null, null, null, null];   // focus per page: 'dock', 'edge:l', 'edge:r', 'eid:<id>', 'cam:<id>', 'day:<n>', 'lib'
     var selBeforeEdge = [null, null, null, null, null];
     var pageTimer = null;
 
-    function hasSide(p, side) { return side === 'l' ? p > 0 : p < PAGES.length - 1; }
+    function pos(p) { return ORDER.indexOf(p); }
+    function hasSide(p, side) { var i = pos(p); return side === 'l' ? i > 0 : i >= 0 && i < ORDER.length - 1; }
+    function neighbor(p, dir) { return ORDER[pos(p) + dir]; }
+
+    // The four optional screens in the chosen order (shown or not).
+    function screensList() {
+        var out = [], seen = {}, i;
+        each(cfg.screens || [], function (k) { i = PAGE_KEYS.indexOf(k); if (i > 0 && !seen[i]) { seen[i] = true; out.push(i); } });
+        for (i = 1; i < PAGE_KEYS.length; i++) { if (!seen[i]) { out.push(i); } }
+        return out;
+    }
+
+    function screenOn(p) { return (cfg.screensOff || []).indexOf(PAGE_KEYS[p]) < 0; }
+
+    function computeOrder() {
+        var o = [P_HOME];
+        each(screensList(), function (p) { if (screenOn(p) && (p !== P_LIB || jfSignedIn())) { o.push(p); } });
+        return o;
+    }
+
+    // Puts every shown page at its slot in the strip; the others are taken out.
+    function pagesUpdate() {
+        ORDER = computeOrder();
+        each(document.querySelectorAll('#pages .page'), function (el, i) {
+            var at = pos(i);
+            el.style.display = at < 0 ? 'none' : '';
+            if (at >= 0) { el.style.left = (at * 1920) + 'px'; }
+            el.style.visibility = i === page ? 'visible' : 'hidden';
+        });
+        if (pos(page) < 0) {
+            page = -1;
+            if (tabFocus !== null) { tabFocus = 1; }
+            showPage(P_HOME);
+        } else {
+            $('pages').style.transform = 'translate3d(' + (-1920 * pos(page)) + 'px,0,0)';
+            if (tabFocus !== null) { tabFocus = Math.min(tabFocus, ORDER.length); }
+        }
+        renderChrome();
+        applyFocus();
+    }
 
     function showPage(p) {
-        if (p < 0 || p >= PAGES.length || p === page) { return; }
-        var dir = p > page ? 1 : -1;
+        if (pos(p) < 0 || p === page) { return; }
+        var dir = pos(p) > pos(page) ? 1 : -1;
         page = p;
         var s = sel[p];
         if (!s || s.indexOf('edge:') === 0 || (p > 0 && !itemByKey(p, s))) {
@@ -1899,7 +1950,7 @@
         }
         if (p === 0 && dir < 0 && sel[0] === 'dock') { focus = tiles.length - 1; }   // back from Controls: the dock's last tile
         each(document.querySelectorAll('#pages .page'), function (el) { el.style.visibility = 'visible'; });
-        $('pages').style.transform = 'translate3d(' + (-1920 * p) + 'px,0,0)';
+        $('pages').style.transform = 'translate3d(' + (-1920 * pos(p)) + 'px,0,0)';
         clearTimeout(pageTimer);
         pageTimer = setTimeout(function () {       // only the visible page stays drawn
             each(document.querySelectorAll('#pages .page'), function (el, i) { el.style.visibility = i === page ? 'visible' : 'hidden'; });
@@ -1911,18 +1962,80 @@
         if (p === P_LIB) { libLoad(false); }
     }
 
-    // Tabs, dots, edge arrows and the darker veil behind Controls and Cameras.
+    // Toolbar (gear and tabs), dots, edge arrows and the darker veil behind the other pages.
+    // The toolbar is rebuilt only when the screens change; focus and the current page are classes.
     function renderChrome() {
-        var t = '', d = '';
-        each(PAGES, function (name, i) {
-            t += '<div class="tab' + (i === page ? ' on' : '') + '">' + name + '</div>';
-            d += '<i' + (i === page ? ' class="on"' : '') + '></i>';
-        });
-        $('tabs').innerHTML = t;
-        $('dots').innerHTML = d;
+        var sig = ORDER.join(',');
+        if (sig !== tabsSig) {
+            tabsSig = sig;
+            var t = '<div class="tab gear">' + GLYPHS.gear + '</div>', d = '';
+            each(ORDER, function (p) { t += '<div class="tab">' + PAGE_NAMES[p] + '</div>'; d += '<i></i>'; });
+            $('tabs').innerHTML = t;
+            $('dots').innerHTML = d;
+        }
+        renderTabs();
         $('veil').className = page ? 'on' : '';
-        $('edgeL').innerHTML = '<span class="chev">&lsaquo;</span><span class="lbl">' + (PAGES[page - 1] || '') + '</span>';
-        $('edgeR').innerHTML = '<span class="lbl">' + (PAGES[page + 1] || '') + '</span><span class="chev">&rsaquo;</span>';
+        $('edgeL').innerHTML = '<span class="chev">&lsaquo;</span><span class="lbl">' + (PAGE_NAMES[neighbor(page, -1)] || '') + '</span>';
+        $('edgeR').innerHTML = '<span class="lbl">' + (PAGE_NAMES[neighbor(page, 1)] || '') + '</span><span class="chev">&rsaquo;</span>';
+    }
+
+    function renderTabs() {
+        var tabs = $('tabs').children, dots = $('dots').children, i, c;
+        for (i = 0; i < tabs.length; i++) {
+            c = 'tab' + (i === 0 ? ' gear' : '') + (i > 0 && ORDER[i - 1] === page ? ' on' : '') + (tabFocus === i ? ' focused' : '');
+            if (tabs[i].className !== c) { tabs[i].className = c; }
+        }
+        for (i = 0; i < dots.length; i++) { c = ORDER[i] === page ? 'on' : ''; if (dots[i].className !== c) { dots[i].className = c; } }
+        c = tabFocus !== null ? 'nav' : '';
+        if ($('tabs').className !== c) { $('tabs').className = c; }
+    }
+
+    // Up from the top of any page: the toolbar, on the current page's tab.
+    function toTabs() {
+        tabFocus = pos(page) + 1;
+        applyFocus();
+    }
+
+    // Can Down / OK from the toolbar land on something on this page?
+    function pageCanFocus(p) {
+        if (p === P_HOME) { return dockApps().length > 0 || sensorsFocusable(); }
+        if (p === P_LIB) { return !!lib.loadedAt; }
+        return itemsOf(p).length > 0;
+    }
+
+    function leaveTabs() {
+        var p = page;
+        if (!pageCanFocus(p)) { return; }
+        tabFocus = null;
+        if (p === P_HOME) {
+            if (sel[0] === 'dock' && !dockApps().length) { sel[0] = 'dock'; senEnter(); return; }
+            if (String(sel[0]).indexOf('sen:') === 0 && !itemByKey(0, sel[0])) { sel[0] = 'dock'; }
+        } else if (p === P_LIB) {
+            sel[p] = 'lib';
+        } else if (!sel[p] || sel[p].indexOf('edge:') === 0 || !itemByKey(p, sel[p])) {
+            var back = selBeforeEdge[p] && itemByKey(p, selBeforeEdge[p]) ? selBeforeEdge[p] : itemsOf(p)[0].key;
+            sel[p] = back;
+        }
+        applyFocus();
+    }
+
+    function onTabsKey(k) {
+        var n = ORDER.length + 1;
+        if (k === KEY.LEFT || k === KEY.RIGHT) {
+            var to = tabFocus + (k === KEY.LEFT ? -1 : 1);
+            if (to < 0 || to >= n) { return true; }
+            tabFocus = to;
+            if (to > 0 && ORDER[to - 1] !== page) { showPage(ORDER[to - 1]); } else { applyFocus(); }
+        } else if (k === KEY.ENTER) {
+            if (tabFocus === 0) { openSettings(); } else { leaveTabs(); }
+        } else if (k === KEY.DOWN) {
+            leaveTabs();
+        } else if (isBack(k)) {
+            if (page !== P_HOME) { tabFocus = pos(P_HOME) + 1; showPage(P_HOME); } else { leaveTabs(); }
+        } else if (k !== KEY.UP) {
+            return false;
+        }
+        return true;
     }
 
     // Focusable items of a page, in the page's own coordinates (unaffected by scrolling).
@@ -1930,7 +2043,7 @@
         var out = [];
         if (p === P_LIB) { return lib.loadedAt ? [{ key: 'lib', el: $('libArea'), x: 0, y: 0, w: 1, h: 1 }] : []; }
         var nodes = p === P_CTL ? document.querySelectorAll('#ctlTrack .ctl') : p === P_CAM ? document.querySelectorAll('#camArea .camtile')
-            : p === P_WX ? document.querySelectorAll('#wxArea .wday') : [];
+            : p === P_WX ? document.querySelectorAll('#wxArea .wday') : p === P_HOME && sensorsFocusable() ? document.querySelectorAll('#sensors .scard') : [];
         each(nodes, function (el) {
             out.push({ key: el.getAttribute('data-key'), el: el, x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
         });
@@ -1944,14 +2057,18 @@
     }
 
     function applyFocus() {
-        var s = sel[page];
+        if (tabFocus === null && page === P_HOME && mode === 'dock' && !homeHasFocus()) { tabFocus = pos(P_HOME) + 1; }
+        var s = tabFocus === null ? sel[page] : null;   // on the toolbar, nothing on the page shows focus
+        renderTabs();
         renderDock();
         $('edgeL').className = 'edge l' + (hasSide(page, 'l') ? '' : ' off') + (s === 'edge:l' ? ' focused' : '');
         $('edgeR').className = 'edge r' + (hasSide(page, 'r') ? '' : ' off') + (s === 'edge:r' ? ' focused' : '');
-        each(document.querySelectorAll('#ctlTrack .ctl'), function (el) { setFocused(el, page === 1 && el.getAttribute('data-key') === sel[1]); });
-        each(document.querySelectorAll('#camArea .camtile'), function (el) { setFocused(el, page === P_CAM && el.getAttribute('data-key') === sel[P_CAM]); });
-        each(document.querySelectorAll('#wxArea .wday'), function (el) { setFocused(el, page === P_WX && el.getAttribute('data-key') === sel[P_WX]); });
-        if (page === 1) { scrollControls(); maybeDimHint(); }
+        each(document.querySelectorAll('#ctlTrack .ctl'), function (el) { setFocused(el, page === P_CTL && el.getAttribute('data-key') === s); });
+        each(document.querySelectorAll('#camArea .camtile'), function (el) { setFocused(el, page === P_CAM && el.getAttribute('data-key') === s); });
+        each(document.querySelectorAll('#wxArea .wday'), function (el) { setFocused(el, page === P_WX && el.getAttribute('data-key') === s); });
+        each(document.querySelectorAll('#sensors .scard'), function (el) { setFocused(el, page === P_HOME && el.getAttribute('data-key') === s); });
+        if (page === P_HOME) { scrollSensors(); }
+        if (page === 1) { scrollControls(); if (s) { maybeDimHint(); } }
         if (page === P_WX) { wxFollowFocus(); }
         libApplyFocus();
     }
@@ -1990,26 +2107,41 @@
         });
         if (best) { sel[page] = best.key; applyFocus(); }
         else if (dx) { toEdge(dx > 0 ? 'r' : 'l'); }
+        else if (dy < 0) { toTabs(); }                                  // top row: up to the toolbar
+        else if (page === P_HOME && dockApps().length) { sel[0] = 'dock'; applyFocus(); }   // sensors: down to the dock
     }
 
     // Keys while the pages are showing (no panel open). Returns false if not used.
     function onPageKey(k) {
+        if (tabFocus !== null) { return onTabsKey(k); }
         var s = sel[page] || '';
         if (s.indexOf('edge:') === 0) {
             var right = s === 'edge:r';
-            if (k === KEY.ENTER || (right && k === KEY.RIGHT) || (!right && k === KEY.LEFT)) { showPage(page + (right ? 1 : -1)); }
+            if (k === KEY.ENTER || (right && k === KEY.RIGHT) || (!right && k === KEY.LEFT)) { showPage(neighbor(page, right ? 1 : -1)); }
             else if ((right && k === KEY.LEFT) || (!right && k === KEY.RIGHT)) {
                 sel[page] = selBeforeEdge[page] && (page === 0 || itemByKey(page, selBeforeEdge[page])) ? selBeforeEdge[page]
                     : (page === 0 ? 'dock' : (itemsOf(page)[0] || {}).key || s);
                 applyFocus();
             } else if (isBack(k) && page > 0) { showPage(0); }
-            else if (k !== KEY.UP && k !== KEY.DOWN) { return false; }
+            else if (k === KEY.UP) { toTabs(); }
+            else if (k !== KEY.DOWN) { return false; }
             return true;
         }
         if (page === P_LIB) { return onLibKey(k); }
+        if (page === 0 && s.indexOf('sen:') === 0) {
+            if (k === KEY.LEFT) { moveSpatial(-1, 0); }
+            else if (k === KEY.RIGHT) { moveSpatial(1, 0); }
+            else if (k === KEY.UP) { moveSpatial(0, -1); }
+            else if (k === KEY.DOWN) { moveSpatial(0, 1); }
+            else if (k === KEY.ENTER) { /* sensor cards only show values */ }
+            else if (isBack(k)) { sel[0] = 'dock'; applyFocus(); }
+            else { return false; }
+            return true;
+        }
         if (page === 0) {
             if (k === KEY.LEFT) { if (focus > 0) { focus--; renderDock(); } }
             else if (k === KEY.RIGHT) { if (focus < tiles.length - 1) { focus++; renderDock(); } else { toEdge('r'); } }
+            else if (k === KEY.UP) { if (sensorsFocusable()) { senEnter(); } else { toTabs(); } }
             else if (k === KEY.ENTER) { activateTile(tiles[focus]); }
             else if (isBack(k)) { /* home screen: Back does nothing; Home and Exit still work */ }
             else { return false; }
@@ -2048,20 +2180,75 @@
         buildDock();
     }
 
-    // Home: up to 15 sensor cards, five to a row.
+    // Home: up to 30 sensor cards, six to a row. Without apps in the dock they fill the screen
+    // (five rows, no scrolling); with the dock, three rows show and the rest scroll: Up from the
+    // dock moves into the cards, and a bar at the side shows where you are.
+    var SEN_COLS = 6, SEN_ROW_H = 150, homeHtml = '', senTop = 0;
+
+    function sensorRows() { return Math.ceil(Math.min(selectedOf('sensor').length, MAX_SENSORS) / SEN_COLS); }
+    function sensorRowsVisible() { return dockApps().length ? 3 : 5; }
+    function sensorsFocusable() { return !$('senBox').hidden && sensorRows() > sensorRowsVisible(); }
+
+    function homeHasFocus() {
+        var s = sel[0] || '';
+        if (s.indexOf('sen:') === 0) { return sensorsFocusable() && !!itemByKey(0, s); }
+        if (s === 'dock') { return dockApps().length > 0; }
+        return s.indexOf('edge:') === 0;
+    }
+
+    // Up from the dock: the card above the focused app, in the lowest row that's showing.
+    function senEnter() {
+        var items = itemsOf(0);
+        if (!items.length) { toTabs(); return; }
+        var row = Math.min(sensorRows(), senTop + sensorRowsVisible()) - 1, best = null, x = 1e9;
+        var t = tiles[focus], tx = t ? t.getBoundingClientRect().left + t.offsetWidth / 2 - $('sensors').getBoundingClientRect().left : 0;
+        each(items, function (it) {
+            if (Math.round(it.y / SEN_ROW_H) !== row) { return; }
+            var d = Math.abs(it.x + it.w / 2 - tx);
+            if (d < x) { x = d; best = it; }
+        });
+        sel[0] = (best || items[items.length - 1]).key;
+        applyFocus();
+    }
+
+    function scrollSensors() {
+        var box = $('senBox'), track = $('sensors'), rows = sensorRows(), vis = sensorRowsVisible(), maxTop = Math.max(0, rows - vis);
+        var s = sel[0] || '', it = s.indexOf('sen:') === 0 && tabFocus === null ? itemByKey(0, s) : null;
+        if (it) {
+            var row = Math.round(it.y / SEN_ROW_H);
+            if (row < senTop) { senTop = row; } else if (row > senTop + vis - 1) { senTop = row - vis + 1; }
+        }
+        senTop = Math.max(0, Math.min(maxTop, senTop));
+        track.style.transform = 'translate3d(0,' + (-senTop * SEN_ROW_H) + 'px,0)';
+        var c = (dockApps().length ? 'withdock' : 'nodock') + (/stale/.test(box.className) ? ' stale' : '') +
+            (senTop > 0 ? ' fade-t' : '') + (senTop < maxTop ? ' fade-b' : '');
+        if (box.className !== c) { box.className = c; }
+        var bar = $('senBar');
+        bar.className = (maxTop > 0 && !box.hidden ? 'show ' : '') + (dockApps().length ? 'withdock' : 'nodock');
+        if (maxTop > 0) {
+            var h = dockApps().length ? 340 : 732;
+            bar.firstChild.style.height = Math.round(h * vis / rows) + 'px';
+            bar.firstChild.style.transform = 'translate3d(0,' + Math.round(h * senTop / rows) + 'px,0)';
+        }
+    }
+
     function renderHome(stale) {
         var sensors = selectedOf('sensor').slice(0, MAX_SENSORS), html = '', anyKnown = false;
+        var focusKey = tabFocus === null && page === P_HOME ? sel[0] : null;
         each(sensors, function (eid) {
             var f = formatState(eid);
             if (ha.states[eid]) { anyKnown = true; }
-            html += '<div class="scard' + (f.dim ? ' dim' : '') + (f.text ? ' text' : '') + '">' +
+            html += '<div class="scard' + (f.dim ? ' dim' : '') + (f.text ? ' text' : '') + ('sen:' + eid === focusKey ? ' focused' : '') +
+                '" data-key="sen:' + esc(eid) + '">' +
                 '<div class="val">' + esc(f.value) + (f.unit === '°' ? '°' : (f.unit ? '<span class="unit">' + esc(f.unit) + '</span>' : '')) + '</div>' +
                 '<div class="name">' + esc(displayName(eid)) + (f.note ? ' <span class="note">' + esc(f.note) + '</span>' : '') + '</div></div>';
         });
-        var box = $('sensors');
-        box.innerHTML = html;
+        if (html !== homeHtml) { homeHtml = html; $('sensors').innerHTML = html; }   // unchanged values: nothing redrawn
+        var box = $('senBox');
         box.hidden = !sensors.length || !anyKnown;
-        box.className = stale ? 'stale' : '';
+        box.className = box.className.replace(/\s*stale/g, '') + (stale ? ' stale' : '');
+        if (String(sel[0]).indexOf('sen:') === 0 && !sensorsFocusable()) { sel[0] = 'dock'; }
+        scrollSensors();
     }
 
     // ---------------------------------------------------- Controls page
@@ -2098,8 +2285,13 @@
         return out;
     }
 
+    // Redrawn only when something on it changed, with the focused tile already marked: a fresh
+    // tile without the mark would shrink and grow again (a second bounce) on every HA update.
+    var ctlHtml = '';
+
     function renderControls(stale) {
         var buttons = selectedOf('button').slice(0, MAX_BUTTONS), html = '';
+        var focusKey = tabFocus === null && page === P_CTL ? sel[1] : null;
         if (!buttons.length) {
             html = emptyHtml('lights and switches', '');
         } else {
@@ -2110,6 +2302,7 @@
                     var unav = !st || st.state === 'unavailable';
                     var on = isOn(eid), dimmable = !unav && isDimmable(eid);
                     html += '<div class="ctl' + (on ? ' on' : '') + (unav ? ' unav' : '') + (dimmable ? ' dimmable' : '') +
+                        ('eid:' + eid === focusKey ? ' focused' : '') +
                         '" data-key="eid:' + esc(eid) + '"><div class="ic">' + GLYPHS[ctlIcon(eid)] + '</div>' +
                         '<div class="txt"><div class="nm">' + esc(displayName(eid)) + '</div><div class="st">' + esc(ctlState(eid)) + '</div></div>' +
                         (dimmable && on ? '<div class="bar"><b style="width:' + brightnessPct(eid) + '%"></b></div>' : '') + '</div>';
@@ -2117,8 +2310,8 @@
                 html += '</div></div>';
             });
         }
-        $('ctlTrack').innerHTML = html;
-        $('ctlArea').className = stale ? 'stale' : '';
+        if (html !== ctlHtml) { ctlHtml = html; $('ctlTrack').innerHTML = html; }
+        $('ctlArea').className = $('ctlArea').className.replace(/\s*stale/g, '') + (stale ? ' stale' : '');
         var s = sel[1];
         if (s && s.indexOf('eid:') === 0 && !itemByKey(1, s)) { sel[1] = null; }
         if (!sel[1] && page === 1) {
@@ -2435,25 +2628,20 @@
     var lib = { loadedAt: 0, loading: false, error: '', cw: [], ra: [], all: [], total: -1, sort: 'name', pages: {},
                 row: 0, col: 0, scrollY: 0, stripX: { cw: 0, ra: 0 }, wantX: 0, layout: null, gen: 0, detail: null };
 
-    function libAvailable() { return jfSignedIn() && cfg.jfLibrary !== 'hide'; }
-
-    // Called when the Jellyfin session or the Show / Hide setting changes.
+    // Called when the Jellyfin session or Settings > Screens changes: the pages are laid out again,
+    // and a Library that went away forgets what it had loaded.
     function libPagesUpdate() {
-        var want = libAvailable(), has = PAGES.length > P_LIB;
-        if (want === has) { return; }
-        if (want) {
-            PAGES.push('Library');
-            sel[P_LIB] = null;
-            selBeforeEdge[P_LIB] = null;
-            each(document.querySelectorAll('#pages .page'), function (el, i) { if (i === P_LIB) { el.style.visibility = 'hidden'; } });
-        } else {
-            PAGES.length = P_LIB;
+        var had = pos(P_LIB) >= 0;
+        pagesUpdate();
+        var has = pos(P_LIB) >= 0;
+        if (had && !has) {
             lib.loadedAt = 0;
             lib.all = []; lib.cw = []; lib.ra = []; lib.total = -1; lib.pages = {}; lib.detail = null;
-            if (page >= P_LIB) { page = P_LIB; showPage(0); }
+            libRenderDetail();
+        } else if (!had && has) {
+            sel[P_LIB] = null;
+            selBeforeEdge[P_LIB] = null;
         }
-        renderChrome();
-        applyFocus();
     }
 
     // ---------------------------------------------------- data
@@ -2656,7 +2844,7 @@
 
     function libApplyFocus() {
         each(document.querySelectorAll('#libArea .focused'), function (el) { setFocused(el, false); });
-        var on = page === P_LIB && sel[P_LIB] === 'lib' && !lib.detail;
+        var on = page === P_LIB && sel[P_LIB] === 'lib' && !lib.detail && tabFocus === null;
         var el = on ? libEl(lib.row, lib.col) : null;
         if (el) { setFocused(el, true); }
         if (page === P_LIB && lib.detail) {       // the page arrows would sit on top of the details view
@@ -2731,7 +2919,8 @@
 
     function libMoveRow(dir) {
         var rows = libRows(), to = lib.row + dir;
-        if (to < 0 || to >= rows.length) { return; }
+        if (to < 0) { toTabs(); return; }
+        if (to >= rows.length) { return; }
         var x = libScreenX(lib.row, lib.col), best = 0, bestD = 1e9;
         for (var c = 0; c < rows[to].n; c++) {
             var d = Math.abs(libScreenX(to, c) - x);
@@ -2750,7 +2939,7 @@
         var R = libRows()[lib.row];
         if (!R) { return; }
         if (dir < 0 && lib.col === 0) { toEdge('l'); libApplyFocus(); return; }
-        if (dir > 0 && lib.col >= R.n - 1) { return; }        // Library is the last page
+        if (dir > 0 && lib.col >= R.n - 1) { toEdge('r'); libApplyFocus(); return; }   // a next page, if Library isn't last
         lib.col += dir;
         libScroll();
         libApplyFocus();
@@ -2792,8 +2981,10 @@
         if (lib.detail) { return onDetailKey(k); }
         if (!lib.loadedAt) {
             if (k === KEY.LEFT) { toEdge('l'); return true; }
+            if (k === KEY.RIGHT) { toEdge('r'); return true; }
+            if (k === KEY.UP) { toTabs(); return true; }
             if (isBack(k)) { showPage(0); return true; }
-            return k === KEY.RIGHT || k === KEY.UP || k === KEY.DOWN || k === KEY.ENTER;
+            return k === KEY.DOWN || k === KEY.ENTER;
         }
         var R = libRows()[lib.row];
         if (k === KEY.LEFT) { libMoveCol(-1); }
@@ -4036,7 +4227,7 @@
     // ================================================================== dock
 
     var tiles = [], focus = 0;
-    var dockSignature = '';
+    var dockSignature = '', dockSig0 = null;
     var installedApps = null;   // Tizen ApplicationInformation[] once listed
 
     function dockApps() { return cfg.dockApps || ['youtube', 'internet']; }
@@ -4059,7 +4250,7 @@
     }
 
     function renderDock() {
-        each(tiles, function (t, i) { setFocused(t, page === 0 && sel[0] === 'dock' && i === focus); });
+        each(tiles, function (t, i) { setFocused(t, page === 0 && tabFocus === null && sel[0] === 'dock' && i === focus); });
         scrollDock();
     }
 
@@ -4080,15 +4271,13 @@
         $('dockMoreR').className = 'dockMore' + (x + trackW > dockW + 1 ? ' show' : '');
     }
 
-    // Your apps in order, the "+" tile, then Settings.
-    // Rebuilt only when that list changes.
+    // Your apps in order (Settings is the gear in the toolbar). Rebuilt only when that list changes.
     function buildDock() {
         var items = [];
         each(dockApps(), function (entry) {
             var def = appDef(entry);
             items.push({ app: entry, label: def.name, glyph: def.glyph });
         });
-        items.push({ action: 'settings', label: 'Settings', glyph: 'gear' });
         var sig = cfg.icons + '|';
         each(items, function (d) { sig += (d.app || d.action || d.camera) + '=' + d.label + ';'; });
         if (sig === dockSignature) { return; }
@@ -4102,6 +4291,8 @@
         });
         $('dockTrack').innerHTML = html;
         $('dock').className = items.length >= 5 ? 'compact' : '';
+        homeHtml = '';                                 // the sensor area changes size with the dock
+        if (dockSig0 !== (items.length > 0)) { dockSig0 = items.length > 0; renderHome(!ha.connected); applyFocus(); }
         tiles = document.querySelectorAll('#dock .tile');
         focus = Math.max(0, Math.min(focus, tiles.length - 1));
         renderDock();
@@ -4523,9 +4714,79 @@
         return true;
     }
 
+    // ------------------------------------------------------------------ Settings > Screens
+    //
+    // Which screens you slide between, and their order. OK shows or hides one; Right picks it up,
+    // Up / Down move it, OK drops it. Home is always there and always first.
+
+    var scr = { row: 0, moving: null };
+
+    function openScreens() {
+        mode = 'screens';
+        scr.row = 0;
+        scr.moving = null;
+        $('settings').hidden = true;
+        $('screens').hidden = false;
+        renderScreens();
+    }
+
+    function closeScreens() {
+        scr.moving = null;
+        $('screens').hidden = true;
+        $('settings').hidden = false;
+        mode = 'settings';
+        renderSettings();
+    }
+
+    function renderScreens() {
+        var list = screensList();
+        var html = '<li class="item checked fixed"><span class="box"></span><span class="name">Home</span>' +
+            '<span class="where">always first</span><span class="val">1</span></li>';
+        each(list, function (p, i) {
+            var note = p === P_LIB && !jfSignedIn() ? 'appears once you sign in to Jellyfin' : '';
+            html += '<li class="item' + (screenOn(p) ? ' checked' : '') + (scr.moving === p ? ' moving' : '') + (scr.row === i ? ' focused' : '') +
+                '" data-screen="' + PAGE_KEYS[p] + '"><span class="box"></span><span class="name">' + PAGE_NAMES[p] + '</span>' +
+                '<span class="where">' + note + '</span><span class="val">' + (scr.moving === p ? '↕ ' : '') + (i + 2) + '</span></li>';
+        });
+        $('scrList').innerHTML = html;
+        $('scrHint').innerHTML = scr.moving !== null ? 'Up / Down to move &middot; OK to drop it here'
+            : 'OK to show or hide &middot; Right to move it &middot; Back to close';
+    }
+
+    function saveScreens(list, off) {
+        cfg.screens = list.map(function (p) { return PAGE_KEYS[p]; });
+        cfg.screensOff = off;
+        save('screens');
+        save('screensOff');
+        libPagesUpdate();
+    }
+
+    function onScreensKey(k) {
+        var list = screensList(), off = (cfg.screensOff || []).slice(0);
+        if (scr.moving !== null) {
+            if (k === KEY.UP || k === KEY.DOWN) {
+                var i = list.indexOf(scr.moving), j = i + (k === KEY.UP ? -1 : 1);
+                if (j >= 0 && j < list.length) { list[i] = list[j]; list[j] = scr.moving; scr.row = j; saveScreens(list, off); }
+            } else if (k === KEY.ENTER || k === KEY.LEFT || isBack(k)) { scr.moving = null; }
+            renderScreens();
+            return true;
+        }
+        if (k === KEY.UP) { scr.row = Math.max(0, scr.row - 1); }
+        else if (k === KEY.DOWN) { scr.row = Math.min(list.length - 1, scr.row + 1); }
+        else if (k === KEY.ENTER) {
+            var key = PAGE_KEYS[list[scr.row]], at = off.indexOf(key);
+            if (at >= 0) { off.splice(at, 1); } else { off.push(key); }
+            saveScreens(list, off);
+        } else if (k === KEY.RIGHT) { scr.moving = list[scr.row]; }
+        else if (isBack(k)) { closeScreens(); return true; }
+        else { return false; }
+        renderScreens();
+        return true;
+    }
+
     // ------------------------------------------------------------------ settings panel
 
-    var mode = 'dock';      // dock | settings | picker | apps | dim | editor | diag | camera | video
+    var mode = 'dock';      // dock | settings | picker | apps | screens | dim | editor | diag | camera | video
     var setRow = 0;
     var updateText = '';
 
@@ -4547,6 +4808,11 @@
         }
         if (def.action === 'jellyfin') { return jfSettingsValue(); }
         if (def.action === 'apps') { return dockApps().length + (dockApps().length === 1 ? ' app' : ' apps'); }
+        if (def.action === 'screens') {
+            var names = [];
+            each(screensList(), function (p) { if (screenOn(p)) { names.push(PAGE_NAMES[p]); } });
+            return names.length ? names.join(', ') : 'Home only';
+        }
         if (def.action === 'address') { return shortBase(); }
         if (def.action === 'update') { return updateText || 'Check now'; }
         if (def.action === 'diag') { return 'Open'; }
@@ -4576,7 +4842,7 @@
     function closeOverlays() {
         jfStopQc();
         jfBlurInput();
-        each(['settings', 'picker', 'apps', 'editor', 'diag', 'jf'], function (id) { $(id).hidden = true; });
+        each(['settings', 'picker', 'apps', 'screens', 'editor', 'diag', 'jf'], function (id) { $(id).hidden = true; });
         var input = $('addr');
         if (input) { input.blur(); }
         mode = 'dock';
@@ -4611,6 +4877,7 @@
     function runAction(action) {
         if (action === 'widgets') { openPicker(); }
         else if (action === 'apps') { openApps(); }
+        else if (action === 'screens') { openScreens(); }
         else if (action === 'address') { openEditor(); }
         else if (action === 'diag') { openDiag(); }
         else if (action === 'jellyfin') { jfOpen(); }
@@ -4754,6 +5021,8 @@
             handled = onJfKey(k);
         } else if (mode === 'apps') {
             handled = onAppsKey(k);
+        } else if (mode === 'screens') {
+            handled = onScreensKey(k);
         } else if (k === KEY.YELLOW || k === KEY.Y) {
             if (mode === 'diag') { closeOverlays(); } else { openDiag(); }
         } else if (mode === 'dock') {
@@ -4806,7 +5075,7 @@
     function init() {
         build();
         focus = cfg.focus || 0;
-        renderChrome();
+        pagesUpdate();
         buildDock();
         H.registerKey('ColorF2Yellow');
         H.registerKey('ChannelUp');
