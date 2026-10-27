@@ -9,7 +9,7 @@ lives on Home Assistant, so you change it there and the TV updates itself.
 
 | Controls | Cameras |
 |---|---|
-| ![Controls page](docs/screenshots/controls.jpg) | ![Cameras page](docs/screenshots/cameras.jpg) |
+| ![Controls page](docs/screenshots/controls-aligned-dark.jpg) | ![Cameras page](docs/screenshots/cameras.jpg) |
 
 | Light theme | Settings |
 |---|---|
