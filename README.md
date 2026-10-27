@@ -3,8 +3,9 @@
 A Home Assistant powered home screen for Samsung Tizen TVs. Pages you slide between with
 the remote: **Home** (your apps and up to 30 sensors), **Controls** (lights and switches by
 room, with dimming), **Weather** (the week ahead, in one of two styles), **Cameras** (up to 9
-live cameras in an adaptive grid) and **Library** (your Jellyfin movies, with a player). You
-pick which ones show and in what order. The design lives on Home Assistant, so you change it
+live cameras in an adaptive grid), **Library** (your Jellyfin movies, with a player) and
+**Music** (songs from Home Assistant's media folder, played by the TV). You pick which ones
+show and in what order. The design lives on Home Assistant, so you change it
 there and the TV updates itself.
 
 ![Haven Home page, dark theme](docs/screenshots/home-dark.jpg)
@@ -41,6 +42,10 @@ there and the TV updates itself.
 |---|---|
 | ![Jellyfin settings](docs/screenshots/jellyfin.jpg) | ![Screens](docs/screenshots/screens.jpg) |
 
+| Music | The small player on the other pages |
+|---|---|
+| ![Music page](docs/screenshots/music.jpg) | ![Mini player on Home](docs/screenshots/music-mini.jpg) |
+
 *Screenshots use sample data.*
 
 ## Why
@@ -52,8 +57,9 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
 
 ## Features
 
-- **Pages:** Home, Controls, Weather, Cameras and Library (once you sign in to Jellyfin).
-  Settings > **Screens** chooses which ones show and in what order; Home is always first.
+- **Pages:** Home, Controls, Weather, Cameras, Library (once you sign in to Jellyfin) and
+  Music (once you turn it on). Settings > **Screens** chooses which ones show and in what
+  order; Home is always first.
 - **Toolbar:** the bar at the top holds the Settings gear and a tab for each page. Press
   **Up** from the top of any page to reach it, Left / Right to go to another page (it slides
   as you move), OK or Down to go into the page, OK on the gear for Settings. Dots at the
@@ -89,6 +95,10 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
   temperatures, solar, humidity, up to 12 lights and all cameras). It finds solar from the
   Energy dashboard, prefers camera sub-streams, and skips diagnostic entities. A picker on
   the TV lets you change everything, grouped by area.
+- **Music:** an optional page that plays the songs in Home Assistant's media folder
+  (`/media/Music`) on the TV: Play all, Shuffle, Repeat, folders, the cover and names from the
+  MP3 tags, and Resume after the TV was off. It keeps playing while you move between pages, a
+  small player at the top left shows the song, and the remote's media keys work everywhere.
 - **Dark, light or auto theme:** auto follows `sun.sun`.
 - **Seasonal and weather effects:** snow, rain, storms, fog, stars, autumn leaves, Halloween,
   Valentine's Day, St. Patrick's Day, spring blossoms, Fourth of July and New Year fireworks,
@@ -302,7 +312,8 @@ it again to reinstall the app.
 | Left / Right on Weather | Move along the days; the large card shows the focused day |
 | CH + / CH - on a dimmable light (Controls) | Brightness up / down in 10 % steps, shown on the tile (down to 1 %, then off) |
 | Left / Right in a camera | Switch to the previous / next camera |
-| Back | Close a panel or camera; on any other page, go back to Home |
+| Back | Close a panel or camera; in a Music subfolder, go up; on any other page, go back to Home |
+| Play / Pause, Stop, Fast-forward, Rewind | Music on any page: pause or play, stop, next song, previous song |
 | Yellow | Installed apps and status (design source, HA connection, camera player) |
 | Red, within 6 s of opening | Safe mode: the built-in design |
 
@@ -331,10 +342,10 @@ On a remote without CH keys, Page Up / Page Down do the same (handy in a browser
 - More than fit on the screen? The page scrolls up and down as you move, with soft edges
   and small arrows showing there's more.
 
-**Choosing screens:** Settings > **Screens** lists Home (always first) and the other four
+**Choosing screens:** Settings > **Screens** lists Home (always first) and the other five
 in their order. **OK** shows or hides one; **Right** picks it up, **Up / Down** move it, **OK**
 drops it. The toolbar, the dots and sliding follow at once. Library only appears while you're
-signed in to Jellyfin.
+signed in to Jellyfin. Music starts hidden; tick it here to use it.
 
 **Choosing widgets:** Settings > **Home Assistant widgets**. It lists a
 *Suggested* section, then everything else grouped by area, with live values. OK ticks or
@@ -474,6 +485,35 @@ Rename the entity in HA for a different label.
 - The screensaver stays off while a film plays, and a design update from Home Assistant
   waits until it ends. The Yellow panel shows how the last title played.
 
+**Music:** turn it on in Settings > **Screens**. Nothing needs installing on Home Assistant.
+- **Where the songs come from:** Home Assistant's media folder, the same one its Media panel
+  shows (*My media*: `/media` on Home Assistant OS, the `media` folder on the Samba share).
+  Haven opens a folder named `Music` in it if there is one, otherwise all of My media. To use
+  another top folder, change Settings > **Music folder**. Subfolders show at the top of the
+  list; OK opens one, Back goes up.
+- **Playing:** OK on a song plays the folder from that song. **Play all** plays it in order,
+  **Shuffle all** shuffled. The card at the top has previous, play / pause and next, plus
+  **Shuffle** and **Repeat** (all, one, off). CH + / CH - move a page at a time through a long
+  list.
+- **Names and covers:** until a song has played, the list shows its filename, tidied:
+  `03 - Artist - Title.mp3` becomes *Title* by *Artist*, and a leading track number goes. For
+  the song that's playing (and the next one), Haven reads the MP3 tags: title, artist, album
+  and the cover. Those names and the song's length are then kept for the list. A song
+  without its own cover shows `cover.jpg` or `folder.jpg` from its folder, if there is one.
+- **On every page:** the music carries on while you move around. A small player at the top
+  left shows the song; **Play / Pause**, **Stop**, **Fast-forward** (next song) and **Rewind**
+  (previous, or back to the start of this one) work on any page. A camera or a film pauses
+  the music and it carries on when you close them.
+- **Leaving Haven** (YouTube, another source, the TV off) pauses the music; the TV can't play
+  it in the background. Back in Haven it waits, paused, for Play. After the TV was off, the
+  Music page offers **Resume**, and Play on the remote does the same. It never starts by itself.
+- **Formats:** MP3 everywhere. The Yellow panel lists what your TV's player reports for AAC,
+  FLAC, OGG and WAV; a file it can't play is greyed out in the list and skipped.
+- **How it works:** Home Assistant lists the folder over the widgets' connection and hands
+  the TV a signed link per file, valid for 24 hours, so the token never goes into a link.
+  Tags are read from the start of the file only (a Range request), never the whole folder.
+  While music plays, a design update from Home Assistant waits until it stops.
+
 **Other settings:** wallpaper interval, wallpaper source (built-in, Home Assistant or both),
 slow motion (off by default, it costs GPU), weather style, theme, 12 or 24-hour clock, app icons,
 wallpaper names, and the Home Assistant address.
@@ -526,6 +566,9 @@ reinstalling, so it becomes the new fallback.
 | Jellyfin: "No Jellyfin server answered" | Check the address and port (8096); the TV and the server must be on the same network |
 | Jellyfin: Quick Connect "turned off on this server" | Jellyfin Dashboard > Quick Connect > enable, or sign in with a password |
 | No Library page | Sign in under Settings > Jellyfin, and check Library is ticked in Settings > Screens |
+| No Music page | Tick Music in Settings > Screens |
+| Music: "No songs in Music yet" | Copy the songs into `/media/Music` (the `media` folder on the Samba share), or pick the folder in Settings > Music folder |
+| Music: a song is greyed out or skipped | The TV can't play that format (Yellow panel lists what it can), or the file was moved |
 | Library: a title says it needs video conversion | The TV can't play that video format; allow *Audio and video* in Settings > Jellyfin, or use a server with a GPU |
 | Player: "Direct play didn't work on this TV" | The file is repackaged by Jellyfin instead; nothing to do. The Yellow panel shows the reason |
 | Player: long wait at the start of a converted title | The server is converting; on a Pi keep *Server conversion* on *Audio only* |
