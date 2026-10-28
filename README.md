@@ -5,8 +5,10 @@ the remote: **Home** (your apps and up to 30 sensors), **Controls** (lights and 
 room, with dimming), **Weather** (the week ahead, in one of two styles), **Cameras** (up to 9
 live cameras in an adaptive grid), **Library** (your Jellyfin movies, with a player) and
 **Music** (songs from Home Assistant's media folder, played by the TV). You pick which ones
-show and in what order. The design lives on Home Assistant, so you change it
-there and the TV updates itself.
+show and in what order. Install it from the [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)
+community catalog in a few minutes, or build it yourself with Tizen Studio. Copy a few files
+to Home Assistant and the design lives there too: change it on Home Assistant and the TV
+updates itself.
 
 ![Haven Home page, dark theme](docs/screenshots/home-dark.jpg)
 
@@ -52,8 +54,9 @@ there and the TV updates itself.
 
 Samsung's home screen on older Tizen TVs is slow and full of ads. Android TV owners can
 debloat over ADB and replace the launcher, but Tizen allows neither. Haven is a normal
-sideloaded Tizen web app instead: no root, no exploits, fully reversible. Home Assistant
-opens it whenever the TV turns on, so in practice it becomes the home screen.
+sideloaded Tizen web app instead: no root, no exploits, fully reversible. Add an optional
+Home Assistant automation and it opens whenever the TV turns on, so in practice it becomes
+the home screen.
 
 ## Features
 
@@ -147,12 +150,14 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
 - **TV:** a Samsung Tizen TV that allows Developer Mode. Built and tested on a UE49NU7100
   (2018, Tizen 4.0). Other 2017 to 2021 models should behave similarly; newer ones are
   untested.
-- **Home Assistant** with file access to `/config`, through the Samba share or Studio Code
-  Server add-on. Written against HA 2026.x.
-- **A computer on the same network**, with Tizen Studio 6.1 (instructions below are for
-  Windows) and a Samsung account for the signing certificate.
-- **Optional:** the Samsung Smart TV integration in Home Assistant, to open Haven
-  automatically at power-on.
+- **Home Assistant** with a fixed IP address on your network. Written against HA 2026.x.
+- **A computer on the same network**, for installing: either
+  [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (Windows, macOS or Linux), or
+  Tizen Studio 6.1 (instructions below are for Windows). Both need a Samsung account for the
+  signing certificate.
+- **Optional:** file access to `/config` on Home Assistant (Samba share or Studio Code Server
+  add-on), to edit the design there and use your own photos as wallpapers; and the Samsung
+  Smart TV integration, to open Haven automatically at power-on.
 
 ## Repository layout
 
@@ -179,41 +184,65 @@ docs/screenshots/
 
 ## Setup
 
-### 1. Home Assistant
+There are two ways to get Haven on the TV:
 
-1. Copy the files from `ha/` into `/config`:
-   - `ha/www/haven/` to `/config/www/haven/`
-   - `ha/haven/haven_wallpapers.py` to `/config/haven/haven_wallpapers.py`
-   - `ha/packages/haven.yaml` to `/config/packages/haven.yaml`
-2. In `haven.yaml`, change `/media/Pictures` to your picture folder. It is only read; the TV
-   gets resized copies without location data.
-3. Make sure `configuration.yaml` loads packages. `packages:` must sit **under**
-   `homeassistant:`; on its own at the top level you get *Integration 'packages' not
-   found*.
-   ```yaml
-   homeassistant:
-     packages: !include_dir_named packages
-   ```
-4. Check the configuration, then restart Home Assistant. Since HA 2026.2, Developer Tools
-   is under **Settings** (bottom of the page), not in the sidebar. The restart is also
-   needed the first time `/config/www` exists.
-5. Run the wallpaper sync once: **Settings > Developer Tools > Actions**,
-   `shell_command.haven_wallpapers`, **Perform action**. The response shows something like
-   `haven_wallpapers: 42 wallpapers, 42 new`. After that it runs at startup and every 15
-   minutes. Each run stops after 50 seconds, so a big first import takes a few runs.
-6. Check in a browser: `http://<HA-IP>:8123/local/haven/wallpapers/list.json` should list
-   your pictures.
-7. Create a long-lived access token: your HA profile > **Security** > **Long-lived access
+- **Apps2Samsung** (easiest): Haven is in its community catalog. You enter your Home Assistant
+  address and token, and it installs Haven for you. No Tizen Studio, no certificate of your
+  own, no files to edit.
+- **Tizen Studio:** build and install it yourself, for when you want to change the installed
+  part of Haven or test your own builds.
+
+Both start with step 1. The Home Assistant files (step 3) and opening Haven at power-on
+(step 4) are optional with either.
+
+### 1. A token for the TV
+
+1. Give Home Assistant a fixed IP address (a DHCP reservation on your router). The TV may
+   not resolve `homeassistant.local`.
+2. Optional, but a good idea: a separate non-admin Home Assistant user for the TV (see
+   [Security notes](#security-notes)), and sign in as that user for the next step.
+3. Create a long-lived access token: your HA profile > **Security** > **Long-lived access
    tokens** > **Create token**. Copy it, because it's shown only once.
 
-### 2. Build and install on the TV
+### 2. Install on the TV
+
+#### Option A: Apps2Samsung
+
+Haven is listed in the Apps2Samsung
+[community catalog](https://github.com/Apps2Samsung/tizen-community-packages), which builds it
+from this repository. Apps2Samsung signs it with a certificate it creates for your TV.
+
+1. **Developer Mode:** on the TV, open **Apps**, then type **1 2 3 4 5**. On the Samsung
+   Smart Remote, press the **123** button for an on-screen number pad. Switch Developer
+   Mode **On**, enter the IP of the computer that will run Apps2Samsung, then fully restart
+   the TV: hold the power button until it reboots, or unplug it for 30 seconds.
+2. **Apps2Samsung:** download it from its
+   [releases page](https://github.com/Apps2Samsung/Apps2Samsung/releases) and start it. It
+   finds the TV on your network. The first install for a TV asks you to sign in to a Samsung
+   account once, to create that TV's certificate.
+3. **Haven:** pick it from the community apps (category *Other*). Apps2Samsung asks for:
+   - your **Home Assistant address**, such as `http://192.168.1.10:8123`: no path and no
+     slash at the end, Haven adds the rest;
+   - the **token** from step 1.
+
+   It writes both into Haven, then installs and opens it.
+4. **First-run check:** press **Yellow** on the remote. The status panel should show
+   *Home Assistant widgets: connected*, and YouTube and Internet highlighted green in the
+   app list.
+
+**Updating:** a push to this repository reaches the catalog within a day. Update Haven from
+Apps2Samsung: it reuses your TV's certificate and fills in the address and token again, so
+Haven keeps its settings on the TV. You can change the address on the TV (Settings > Home
+Assistant address); a new token means installing again from Apps2Samsung with the new value.
+
+#### Option B: build it yourself with Tizen Studio
 
 **Configure the app**
 
 1. Copy `app/shell-config.example.js` to `app/shell-config.js` and fill in:
    - `base`: `http://<HA-IP>:8123/local/haven/`. Give HA a fixed IP (DHCP reservation);
      the TV may not resolve `homeassistant.local`.
-   - `haToken`: the token from step 1.7.
+   - `haToken`: the token from step 1.
 
 **Prepare the TV**
 
@@ -269,8 +298,47 @@ Back up `app/shell-config.js` and your certificate folder
 (`C:\Users\<you>\SamsungCertificate\haven`). Updating Haven in place later requires the
 same certificate; with a new one you'd have to uninstall it first and lose its settings.
 
-### 3. Open Haven when the TV turns on
+**Switching between Option A and B:** the two are signed with different certificates, and
+the TV won't replace an app signed by another one. Uninstall Haven from the TV first (from
+the TV's Apps screen), which also deletes its settings on the TV: the widgets you picked,
+the dock, the Jellyfin sign-in.
 
+### 3. Optional: Home Assistant files
+
+Without these, Haven runs the design and wallpapers built into the app, and the widgets,
+cameras, Library and Music all work. Copy them to Home Assistant to edit the design there
+(see [Changing the design](#changing-the-design)) and to show your own photos as wallpapers.
+
+1. Copy the files from `ha/` into `/config`:
+   - `ha/www/haven/` to `/config/www/haven/`
+   - `ha/haven/haven_wallpapers.py` to `/config/haven/haven_wallpapers.py`
+   - `ha/packages/haven.yaml` to `/config/packages/haven.yaml`
+2. In `haven.yaml`, change `/media/Pictures` to your picture folder. It is only read; the TV
+   gets resized copies without location data.
+3. Make sure `configuration.yaml` loads packages. `packages:` must sit **under**
+   `homeassistant:`; on its own at the top level you get *Integration 'packages' not
+   found*.
+   ```yaml
+   homeassistant:
+     packages: !include_dir_named packages
+   ```
+4. Check the configuration, then restart Home Assistant. Since HA 2026.2, Developer Tools
+   is under **Settings** (bottom of the page), not in the sidebar. The restart is also
+   needed the first time `/config/www` exists.
+5. Run the wallpaper sync once: **Settings > Developer Tools > Actions**,
+   `shell_command.haven_wallpapers`, **Perform action**. The response shows something like
+   `haven_wallpapers: 42 wallpapers, 42 new`. After that it runs at startup and every 15
+   minutes. Each run stops after 50 seconds, so a big first import takes a few runs.
+6. Check in a browser: `http://<HA-IP>:8123/local/haven/wallpapers/list.json` should list
+   your pictures.
+
+### 4. Optional: open Haven when the TV turns on
+
+Without this step, Haven is an app like any other: open it from the TV's Apps screen. With
+**Autorun Last App** on (Settings > General > Smart Features), the TV also reopens it when it
+was the last app you used.
+
+To have it open every time the TV turns on, so it takes the place of Samsung's home screen:
 Tizen won't let a sideloaded app replace Smart Hub, but Home Assistant's Samsung Smart TV
 integration can launch it.
 
@@ -578,11 +646,13 @@ reinstalling, so it becomes the new fallback.
 | *Certificate Manager is not installed or the installation path is invalid* | Package Manager > Main SDK > Tizen SDK tools > Certificate Manager > install |
 | Only "Tizen" in the certificate wizard, no "Samsung" | Install Samsung Certificate Extension, restart Tizen Studio |
 | Install fails with *install failed[118012]* | Device Manager > right-click TV > Permit to install applications |
-| TV boots to Samsung's home, not Haven | Expected; use the power-on automation (setup step 3) |
+| TV boots to Samsung's home, not Haven | Expected; add the optional power-on automation (setup step 4) |
 | TV asks to allow Home Assistant every time | Device Connection Manager > Access Notification > First Time Only |
 | *Not available* when the automation runs | Turn off Autorun Last App |
 | Automation never fires | Trigger on the media_player entity; check History shows off then on |
-| "Home Assistant token rejected" at the top | Wrong `haToken` in `shell-config.js`; fix and reinstall |
+| "Home Assistant token rejected" at the top | Wrong token: in Apps2Samsung, install Haven again with the right one; with Tizen Studio, fix `haToken` in `shell-config.js` and reinstall |
+| Apps2Samsung: no widgets, "Home Assistant offline" | Check the address you entered (`http://<HA-IP>:8123`, the IP rather than `homeassistant.local`) and install again |
+| Apps2Samsung: installing Haven fails | Haven was installed with Tizen Studio before: uninstall it from the TV first (this deletes its settings), see setup step 2 |
 | Jellyfin: "No Jellyfin server answered" | Check the address and port (8096); the TV and the server must be on the same network |
 | Jellyfin: Quick Connect "turned off on this server" | Jellyfin Dashboard > Quick Connect > enable, or sign in with a password |
 | No Library page | Sign in under Settings > Jellyfin, and check Library is ticked in Settings > Screens |
@@ -597,9 +667,12 @@ reinstalling, so it becomes the new fallback.
 
 ## Security notes
 
-- The token in `shell-config.js` can do anything its HA user can do, and it is packaged
-  into the app on the TV. Keep the file out of git (it's in `.gitignore`) and never copy it
-  into `/config/www`.
+- The token can do anything its HA user can do, and it is packaged into the app on the TV.
+  - With Apps2Samsung, it's written into the package on your computer, and Apps2Samsung
+    keeps it there to fill it in again on updates.
+  - With Tizen Studio, it's in `shell-config.js`: keep the file out of git (it's in
+    `.gitignore`), never copy it into `/config/www`, and never share a `.wgt` you built
+    with it.
 - Consider a separate non-admin HA user for the TV. It can still read and switch
   everything, but it can't change HA's configuration.
 - If the TV is lost or sold, delete the token in HA, and sign the TV out in Jellyfin
