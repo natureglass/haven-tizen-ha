@@ -1121,6 +1121,12 @@
 }
 
 .ctl.on .ic { background: rgba(255, 255, 255, 0.55); }
+
+/* a sensor on Controls (Settings > Sensors location): the value where a switch has its icon */
+.ctl.sen .sv { font-size: 50px; font-weight: 300; line-height: 1; padding-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctl.sen.text .sv { font-size: 36px; font-weight: 400; padding-top: 10px; }
+.ctl.sen .sv .unit { margin-left: 6px; font-size: 24px; color: var(--fg-dim); }
+.ctl.sen .st { min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctl.on .st { color: inherit; opacity: 0.75; }
 .ctl.unav { opacity: 0.45; }
 
@@ -1370,7 +1376,7 @@
 }
 
 .panel.wide { width: 1360px; }
-#scrList.picklist { height: auto; }      /* Settings > Screens: five rows, no empty list area */
+#scrList.picklist { height: auto; }      /* Settings > Screens: one row per screen, no empty list area */
 
 .panel h2 {
     margin: 0 0 22px;
@@ -1384,13 +1390,13 @@
     padding: 0;
 }
 
-/* compact rows: 15 settings must fit a 1080p screen with room to spare */
+/* compact rows: 18 settings must fit a 1080p screen */
 #settingsRows li {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 28px;
-    margin-bottom: 3px;
+    padding: 6px 28px;
+    margin-bottom: 2px;
     border-radius: 14px;
     font-size: 25px;
 }

@@ -60,6 +60,7 @@
         { key: '_screens', label: 'Screens', action: 'screens' },
         { key: '_apps', label: 'Apps in the dock', action: 'apps' },
         { key: '_widgets', label: 'Home Assistant widgets', action: 'widgets' },
+        { key: 'senLoc', label: 'Sensors location', options: [['home', 'Home'], ['controls', 'Controls']] },
         { key: '_jellyfin', label: 'Jellyfin', action: 'jellyfin' },
         { key: 'musDir', label: 'Music folder', options: [] },            // filled in by musDirOptions()
         { key: '_address', label: 'Home Assistant address', action: 'address' },
@@ -71,7 +72,7 @@
     // dockApps: app IDs in dock order; null = never chosen, so YouTube and Internet are used.
     var DEFAULTS = { interval: 60, source: 'both', motion: false, season: 'auto', wxStyle: 'a', jfConvert: 'audio', jfMaxRes: 'auto', jfLibrary: 'show', theme: 'dark', clock24: true,
         icons: 'simple', captions: true, focus: 0, widgets: null, dockApps: null, screens: null, screensOff: null,
-        musDir: '', musDirName: '', musShuffle: false, musRepeat: 'all' };
+        musDir: '', musDirName: '', musShuffle: false, musRepeat: 'all', senLoc: 'home' };
     var cfg = {};
     (function () {
         for (var k in DEFAULTS) { if (DEFAULTS.hasOwnProperty(k)) { cfg[k] = H.get(k, DEFAULTS[k]); } }
@@ -168,9 +169,9 @@
                 '<p class="hint">Up / Down to choose &middot; Left / Right to change &middot; Back to close</p></div></section>' +
             '<section id="picker" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Home Assistant widgets</h2><p id="pickCount" class="hint left"></p><ul id="pickList" class="picklist"></ul>' +
-                '<p class="hint">OK to show or hide &middot; Sensors on Home, lights and switches on Controls, cameras on Cameras &middot; Back to close</p></div></section>' +
+                '<p class="hint" id="pickHint"></p></div></section>' +
             '<section id="screens" class="overlay" hidden><div class="panel">' +
-                '<h2>Screens</h2><p class="hint left">The screens you slide between, in this order. Home is always first.</p>' +
+                '<h2>Screens</h2><p class="hint left">The screens you slide between, in this order. Haven opens on the first one.</p>' +
                 '<ul id="scrList" class="picklist"></ul><p id="scrHint" class="hint"></p></div></section>' +
             '<section id="apps" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Apps in the dock</h2><p id="appsCount" class="hint left"></p><ul id="appsList" class="picklist"></ul>' +
@@ -1915,21 +1916,29 @@
     function hasSide(p, side) { var i = pos(p); return side === 'l' ? i > 0 : i >= 0 && i < ORDER.length - 1; }
     function neighbor(p, dir) { return ORDER[pos(p) + dir]; }
 
-    // The four optional screens in the chosen order (shown or not).
+    // Every screen in the chosen order (shown or not). Home is first unless you moved it; an order
+    // saved before Home could move doesn't list it, so it goes in front.
     function screensList() {
         var out = [], seen = {}, i;
-        each(cfg.screens || [], function (k) { i = PAGE_KEYS.indexOf(k); if (i > 0 && !seen[i]) { seen[i] = true; out.push(i); } });
+        each(cfg.screens || [], function (k) { i = PAGE_KEYS.indexOf(k); if (i >= 0 && !seen[i]) { seen[i] = true; out.push(i); } });
+        if (!seen[P_HOME]) { seen[P_HOME] = true; out.unshift(P_HOME); }
         for (i = 1; i < PAGE_KEYS.length; i++) { if (!seen[i]) { out.push(i); } }
         return out;
     }
 
     function screenOn(p) { return (cfg.screensOff || []).indexOf(PAGE_KEYS[p]) < 0; }
 
+    // A screen that's ticked and can show now (Library needs a Jellyfin sign-in).
+    function screenShows(p, off) { return (off || cfg.screensOff || []).indexOf(PAGE_KEYS[p]) < 0 && (p !== P_LIB || jfSignedIn()); }
+
     function computeOrder() {
-        var o = [P_HOME];
-        each(screensList(), function (p) { if (screenOn(p) && (p !== P_LIB || jfSignedIn())) { o.push(p); } });
-        return o;
+        var o = [];
+        each(screensList(), function (p) { if (screenShows(p)) { o.push(p); } });
+        return o.length ? o : [P_HOME];       // never nothing: Home, if every screen that's ticked can't show
     }
+
+    // The first screen: where Haven opens and where Back leads.
+    function startPage() { return ORDER[0]; }
 
     // Puts every shown page at its slot in the strip; the others are taken out.
     function pagesUpdate() {
@@ -1943,7 +1952,7 @@
         if (pos(page) < 0) {
             page = -1;
             if (tabFocus !== null) { tabFocus = 1; }
-            showPage(P_HOME);
+            showPage(startPage());
         } else {
             $('pages').style.transform = 'translate3d(' + (-1920 * pos(page)) + 'px,0,0)';
             if (tabFocus !== null) { tabFocus = Math.min(tabFocus, ORDER.length); }
@@ -1963,6 +1972,7 @@
                 : (items.length ? items[0].key : 'edge:' + (hasSide(p, dir > 0 ? 'r' : 'l') ? (dir > 0 ? 'r' : 'l') : (dir > 0 ? 'l' : 'r')));
         }
         if (p === 0 && dir < 0 && sel[0] === 'dock') { focus = tiles.length - 1; }   // back from Controls: the dock's last tile
+        if (p === 0 && dir > 0 && sel[0] === 'dock' && pos(p) > 0) { focus = 0; }    // from a screen before Home: the first tile
         each(document.querySelectorAll('#pages .page'), function (el) { el.style.visibility = 'visible'; });
         $('pages').style.transform = 'translate3d(' + (-1920 * pos(p)) + 'px,0,0)';
         clearTimeout(pageTimer);
@@ -2038,8 +2048,17 @@
         applyFocus();
     }
 
+    // The focus was put on the toolbar only because the page had nothing yet: it goes into the page
+    // once it has something, unless you've used the toolbar since.
+    var tabParked = false;
+    function unpark() {
+        if (tabParked && tabFocus !== null && mode === 'dock') { tabFocus = null; }
+        tabParked = false;
+    }
+
     function onTabsKey(k) {
         var n = ORDER.length + 1;
+        tabParked = false;
         if (k === KEY.LEFT || k === KEY.RIGHT) {
             var to = tabFocus + (k === KEY.LEFT ? -1 : 1);
             if (to < 0 || to >= n) { return true; }
@@ -2050,7 +2069,7 @@
         } else if (k === KEY.DOWN) {
             leaveTabs();
         } else if (isBack(k)) {
-            if (page !== P_HOME) { tabFocus = pos(P_HOME) + 1; showPage(P_HOME); } else { leaveTabs(); }
+            if (page !== startPage()) { tabFocus = 1; showPage(startPage()); } else { leaveTabs(); }
         } else if (k !== KEY.UP) {
             return false;
         }
@@ -2078,6 +2097,12 @@
 
     function applyFocus() {
         if (tabFocus === null && page === P_HOME && mode === 'dock' && !homeHasFocus()) { tabFocus = pos(P_HOME) + 1; }
+        // an arrow toward a side that has no screen (the only screen shown, with nothing on it yet): the toolbar
+        var es = String(sel[page] || '');
+        if (tabFocus === null && page !== P_HOME && mode === 'dock' && es.indexOf('edge:') === 0 && !hasSide(page, es.slice(5))) {
+            tabFocus = pos(page) + 1;
+            tabParked = true;
+        }
         var s = tabFocus === null ? sel[page] : null;   // on the toolbar, nothing on the page shows focus
         renderTabs();
         renderDock();
@@ -2143,7 +2168,7 @@
                 sel[page] = selBeforeEdge[page] && (page === 0 || itemByKey(page, selBeforeEdge[page])) ? selBeforeEdge[page]
                     : (page === 0 ? 'dock' : (itemsOf(page)[0] || {}).key || s);
                 applyFocus();
-            } else if (isBack(k) && page > 0) { showPage(0); }
+            } else if (isBack(k) && page !== startPage()) { showPage(startPage()); }
             else if (k === KEY.UP) { toTabs(); }
             else if (k !== KEY.DOWN) { return false; }
             return true;
@@ -2161,11 +2186,11 @@
             return true;
         }
         if (page === 0) {
-            if (k === KEY.LEFT) { if (focus > 0) { focus--; renderDock(); } }
+            if (k === KEY.LEFT) { if (focus > 0) { focus--; renderDock(); } else { toEdge('l'); } }   // a screen before Home, if you moved it
             else if (k === KEY.RIGHT) { if (focus < tiles.length - 1) { focus++; renderDock(); } else { toEdge('r'); } }
             else if (k === KEY.UP) { if (sensorsFocusable()) { senEnter(); } else { toTabs(); } }
             else if (k === KEY.ENTER) { activateTile(tiles[focus]); }
-            else if (isBack(k)) { /* home screen: Back does nothing; Home and Exit still work */ }
+            else if (isBack(k)) { showPage(startPage()); }     // as the first screen, Back does nothing; Home and Exit still work
             else { return false; }
             return true;
         }
@@ -2173,7 +2198,7 @@
         else if (k === KEY.RIGHT) { moveSpatial(1, 0); }
         else if (k === KEY.UP) { moveSpatial(0, -1); }
         else if (k === KEY.DOWN) { moveSpatial(0, 1); }
-        else if (isBack(k)) { showPage(0); }
+        else if (isBack(k)) { showPage(startPage()); }
         else if (page === 1 && k === KEY.ENTER) { if (s.indexOf('eid:') === 0) { toggleEid(s.slice(4)); } }
         else if (page === 1 && (k === KEY.CH_UP || k === KEY.PAGE_UP)) { nudgeBrightness(1); }
         else if (page === 1 && (k === KEY.CH_DOWN || k === KEY.PAGE_DOWN)) { nudgeBrightness(-1); }
@@ -2198,6 +2223,12 @@
         renderControls(stale);
         renderCameras(stale);
         renderWeather(stale);
+        // arrived (at start-up, say) while the page had nothing to focus, so the focus went to the
+        // arrow at the side: its first item, now that it has one
+        if (page !== P_HOME && page !== P_LIB && page !== P_MUS && String(sel[page] || '').indexOf('edge:') === 0 && !selBeforeEdge[page]) {
+            var first = itemsOf(page)[0];
+            if (first) { sel[page] = first.key; unpark(); }
+        }
         applyFocus();
         buildDock();
     }
@@ -2207,7 +2238,10 @@
     // dock moves into the cards, and a bar at the side shows where you are.
     var SEN_COLS = 6, SEN_ROW_H = 150, homeHtml = '', senTop = 0;
 
-    function sensorRows() { return Math.ceil(Math.min(selectedOf('sensor').length, MAX_SENSORS) / SEN_COLS); }
+    // Sensors are on Home unless Settings > Sensors location puts them on Controls.
+    function homeSensors() { return cfg.senLoc === 'controls' ? [] : selectedOf('sensor').slice(0, MAX_SENSORS); }
+    function ctlSensors() { return cfg.senLoc === 'controls' ? selectedOf('sensor').slice(0, MAX_SENSORS) : []; }
+    function sensorRows() { return Math.ceil(homeSensors().length / SEN_COLS); }
     function sensorRowsVisible() { return dockApps().length ? 3 : 5; }
     function sensorsFocusable() { return !$('senBox').hidden && sensorRows() > sensorRowsVisible(); }
 
@@ -2255,7 +2289,7 @@
     }
 
     function renderHome(stale) {
-        var sensors = selectedOf('sensor').slice(0, MAX_SENSORS), html = '', anyKnown = false;
+        var sensors = homeSensors(), html = '', anyKnown = false;
         var focusKey = tabFocus === null && page === P_HOME ? sel[0] : null;
         each(sensors, function (eid) {
             var f = formatState(eid);
@@ -2307,19 +2341,45 @@
         return out;
     }
 
+    // A sensor's name on Controls, where its room is the heading: "Living Room Temperature" is
+    // "Temperature" there (on Home it's "Living Room").
+    function ctlSensorName(eid) {
+        var st = ha.states[eid], a = (st && st.attributes) || {}, area = areaOf(eid);
+        var name = a.friendly_name || cap(eid.split('.')[1].replace(/_/g, ' '));
+        if (domainOf(eid) === 'weather' && /^(forecast\b.*|home|weather)$/i.test(name)) { return 'Outside'; }
+        if (area && name.toLowerCase().indexOf(area.toLowerCase()) === 0) {
+            var rest = name.slice(area.length).replace(/^[\s\-:]+/, '');
+            if (rest) { return cap(rest); }
+            if (a.device_class) { return cap(String(a.device_class).replace(/_/g, ' ')); }
+            return domainOf(eid) === 'climate' ? 'Thermostat' : name;
+        }
+        return name;
+    }
+
+    // A sensor as a Controls tile: the value large, the name and any note below. OK and CH do nothing on it.
+    function ctlSensorTile(eid, focused) {
+        var f = formatState(eid);
+        return '<div class="ctl sen' + (f.dim ? ' unav' : '') + (f.text ? ' text' : '') + (focused ? ' focused' : '') +
+            '" data-key="sen:' + esc(eid) + '"><div class="sv">' + esc(f.value) +
+            (f.unit === '°' ? '°' : (f.unit ? '<span class="unit">' + esc(f.unit) + '</span>' : '')) + '</div>' +
+            '<div class="txt"><div class="nm">' + esc(ctlSensorName(eid)) + '</div><div class="st">' + esc(f.note || '') + '</div></div></div>';
+    }
+
     // Redrawn only when something on it changed, with the focused tile already marked: a fresh
     // tile without the mark would shrink and grow again (a second bounce) on every HA update.
     var ctlHtml = '';
 
     function renderControls(stale) {
-        var buttons = selectedOf('button').slice(0, MAX_BUTTONS), html = '';
-        var focusKey = tabFocus === null && page === P_CTL ? sel[1] : null;
-        if (!buttons.length) {
-            html = emptyHtml('lights and switches', '');
+        var buttons = selectedOf('button').slice(0, MAX_BUTTONS), sensors = ctlSensors(), html = '';
+        var focusKey = tabFocus === null && page === P_CTL ? sel[1] : null, isSensor = {};
+        each(sensors, function (eid) { isSensor[eid] = true; });
+        if (!buttons.length && !sensors.length) {
+            html = emptyHtml(cfg.senLoc === 'controls' ? 'sensors, lights and switches' : 'lights and switches', '');
         } else {
-            each(roomsOf(buttons), function (room) {
+            each(roomsOf(buttons.concat(sensors)), function (room) {     // in each room: lights and switches, then sensors
                 html += '<div class="room"><h3>' + esc(room.name) + '</h3><div class="ts">';
                 each(room.eids, function (eid) {
+                    if (isSensor[eid]) { html += ctlSensorTile(eid, 'sen:' + eid === focusKey); return; }
                     var st = ha.states[eid];
                     var unav = !st || st.state === 'unavailable';
                     var on = isOn(eid), dimmable = !unav && isDimmable(eid);
@@ -2335,7 +2395,7 @@
         if (html !== ctlHtml) { ctlHtml = html; $('ctlTrack').innerHTML = html; }
         $('ctlArea').className = $('ctlArea').className.replace(/\s*stale/g, '') + (stale ? ' stale' : '');
         var s = sel[1];
-        if (s && s.indexOf('eid:') === 0 && !itemByKey(1, s)) { sel[1] = null; }
+        if (s && (s.indexOf('eid:') === 0 || s.indexOf('sen:') === 0) && !itemByKey(1, s)) { sel[1] = null; }
         if (!sel[1] && page === 1) {
             var items = itemsOf(1);
             sel[1] = items.length ? items[0].key : 'edge:r';
@@ -2346,7 +2406,7 @@
     function scrollControls() {
         var box = $('ctlArea'), track = $('ctlTrack');
         var boxH = box.clientHeight, trackH = track.offsetHeight, y = 0;
-        var it = sel[1] && sel[1].indexOf('eid:') === 0 ? itemByKey(1, sel[1]) : null;
+        var it = sel[1] && (sel[1].indexOf('eid:') === 0 || sel[1].indexOf('sen:') === 0) ? itemByKey(1, sel[1]) : null;
         if (trackH > boxH && it) {
             var room = it.el.parentNode.parentNode;
             var top = it.y - room.offsetTop < 80 ? room.offsetTop : it.y;
@@ -2693,6 +2753,7 @@
             libKeepFocus();
             var arrived = page === P_LIB && String(sel[P_LIB] || '').indexOf('edge:') === 0 && !selBeforeEdge[P_LIB];
             if (arrived) { sel[P_LIB] = 'lib'; }
+            if (page === P_LIB && tabParked) { unpark(); arrived = true; }
             libRender();
             if (arrived) { applyFocus(); }           // the arrow loses its highlight, the first card gets it
         }, function (e) {
@@ -3005,7 +3066,7 @@
             if (k === KEY.LEFT) { toEdge('l'); return true; }
             if (k === KEY.RIGHT) { toEdge('r'); return true; }
             if (k === KEY.UP) { toTabs(); return true; }
-            if (isBack(k)) { showPage(0); return true; }
+            if (isBack(k)) { showPage(startPage()); return true; }
             return k === KEY.DOWN || k === KEY.ENTER;
         }
         var R = libRows()[lib.row];
@@ -3018,7 +3079,7 @@
         else if (k === KEY.ENTER) {
             if (R && R.k === 'chips') { libSetSort(LIB_SORTS[lib.col][0]); }
             else { var it = libItemAt(lib.row, lib.col); if (it) { libOpenDetail(it); } }
-        } else if (isBack(k)) { showPage(0); }
+        } else if (isBack(k)) { showPage(startPage()); }
         else { return false; }
         return true;
     }
@@ -4084,6 +4145,7 @@
             musSetItems(res);
             var arrived = page === P_MUS && String(sel[P_MUS] || '').indexOf('edge:') === 0 && !selBeforeEdge[P_MUS];
             if (arrived) { sel[P_MUS] = 'mus'; }
+            if (page === P_MUS) { unpark(); }
             musRender();
             if (arrived || page === P_MUS) { applyFocus(); }
         }, function (e) {
@@ -4814,7 +4876,7 @@
             if (k === KEY.LEFT) { toEdge('l'); return true; }
             if (k === KEY.RIGHT) { toEdge('r'); return true; }
             if (k === KEY.UP) { toTabs(); return true; }
-            if (isBack(k)) { if (mus.path.length > 1) { musUp(); } else { showPage(0); } return true; }
+            if (isBack(k)) { if (mus.path.length > 1) { musUp(); } else { showPage(startPage()); } return true; }
             return k === KEY.DOWN || k === KEY.ENTER;
         }
         musFix();
@@ -4832,7 +4894,7 @@
             musScroll();
             applyFocus();
         } else if (isBack(k)) {
-            if (mus.path.length > 1) { musUp(); } else { showPage(0); }
+            if (mus.path.length > 1) { musUp(); } else { showPage(startPage()); }
         } else { return false; }
         return true;
     }
@@ -5218,6 +5280,8 @@
         pickRow = 0;
         $('settings').hidden = true;
         $('picker').hidden = false;
+        $('pickHint').innerHTML = 'OK to show or hide &middot; ' + (cfg.senLoc === 'controls' ? 'Sensors, lights and switches on Controls'
+            : 'Sensors on Home, lights and switches on Controls') + ', cameras on Cameras &middot; Back to close';
         renderPicker();
         if (ha.connected) { haDiscover(); }   // refresh the list each time the picker opens
     }
@@ -5843,7 +5907,9 @@
     // ------------------------------------------------------------------ Settings > Screens
     //
     // Which screens you slide between, and their order. OK shows or hides one; Right picks it up,
-    // Up / Down move it, OK drops it. Home is always there and always first.
+    // Up / Down move it, OK drops it. Home is a screen like the others: hidden, the app dock goes
+    // with it. The first screen shown is where Haven opens and where Back leads. At least one
+    // screen stays on.
 
     var scr = { row: 0, moving: null };
 
@@ -5865,15 +5931,15 @@
     }
 
     function renderScreens() {
-        var list = screensList();
-        var html = '<li class="item checked fixed"><span class="box"></span><span class="name">Home</span>' +
-            '<span class="where">always first</span><span class="val">1</span></li>';
+        var list = screensList(), html = '';
         each(list, function (p, i) {
-            var note = p === P_LIB && !jfSignedIn() ? 'appears once you sign in to Jellyfin'
+            var note = p === startPage() ? 'opens first, Back leads here'
+                : p === P_LIB && !jfSignedIn() ? 'appears once you sign in to Jellyfin'
+                : p === P_HOME && !screenOn(p) ? 'hidden with its app dock'
                 : p === P_MUS ? 'songs from Home Assistant\'s media folder' : '';
             html += '<li class="item' + (screenOn(p) ? ' checked' : '') + (scr.moving === p ? ' moving' : '') + (scr.row === i ? ' focused' : '') +
                 '" data-screen="' + PAGE_KEYS[p] + '"><span class="box"></span><span class="name">' + PAGE_NAMES[p] + '</span>' +
-                '<span class="where">' + note + '</span><span class="val">' + (scr.moving === p ? '↕ ' : '') + (i + 2) + '</span></li>';
+                '<span class="where">' + note + '</span><span class="val">' + (scr.moving === p ? '↕ ' : '') + (i + 1) + '</span></li>';
         });
         $('scrList').innerHTML = html;
         $('scrHint').innerHTML = scr.moving !== null ? 'Up / Down to move &middot; OK to drop it here'
@@ -5901,8 +5967,10 @@
         if (k === KEY.UP) { scr.row = Math.max(0, scr.row - 1); }
         else if (k === KEY.DOWN) { scr.row = Math.min(list.length - 1, scr.row + 1); }
         else if (k === KEY.ENTER) {
-            var key = PAGE_KEYS[list[scr.row]], at = off.indexOf(key);
+            var key = PAGE_KEYS[list[scr.row]], at = off.indexOf(key), left = 0;
             if (at >= 0) { off.splice(at, 1); } else { off.push(key); }
+            each(list, function (p) { if (screenShows(p, off)) { left++; } });
+            if (!left) { toast('At least one screen stays on.', 3000); return true; }
             saveScreens(list, off);
         } else if (k === KEY.RIGHT) { scr.moving = list[scr.row]; }
         else if (isBack(k)) { closeScreens(); return true; }
@@ -5938,11 +6006,12 @@
         if (def.action === 'screens') {
             var names = [];
             each(screensList(), function (p) { if (screenOn(p)) { names.push(PAGE_NAMES[p]); } });
-            return names.length ? names.join(', ') : 'Home only';
+            return names.length ? names.join(', ') : 'Home';
         }
         if (def.action === 'address') { return shortBase(); }
         if (def.action === 'update') { return updateText || 'Check now'; }
         if (def.action === 'diag') { return 'Open'; }
+        if (def.key === 'senLoc') { return def.options[optionIndex(def)][1] + (screenShows(cfg.senLoc === 'controls' ? P_CTL : P_HOME) ? '' : ' (screen hidden)'); }
         return def.options[optionIndex(def)][1];
     }
 
@@ -5995,6 +6064,7 @@
             if (before === 'off' || cfg.season === 'off') { haSubscribe(); }
         }
         if (def.key === 'icons') { applyIcons(); }
+        if (def.key === 'senLoc') { renderWidgets(); }
         if (def.key === 'musDir') {
             cfg.musDirName = cfg.musDir ? def.options[i][1] : '';
             save('musDirName');
@@ -6217,6 +6287,7 @@
         build();
         musInit();
         focus = cfg.focus || 0;
+        page = -1;                 // no screen yet: pagesUpdate opens the first one
         pagesUpdate();
         buildDock();
         H.registerKey('ColorF2Yellow');
