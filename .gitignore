@@ -1,0 +1,22 @@
+﻿# Your Home Assistant token lives here: never commit it
+app/shell-config.js
+
+# Tizen build output and signatures (tizen package writes these into app/)
+*.wgt
+app/.buildResult/
+app/.manifest.tmp
+app/author-signature.xml
+app/signature*.xml
+app/.sign/
+
+# Generated on Home Assistant from your own pictures
+ha/www/haven/wallpapers/*
+!ha/www/haven/wallpapers/list.json
+
+# Tooling
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
