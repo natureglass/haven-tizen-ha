@@ -1122,6 +1122,12 @@
 
 .ctl.on .ic { background: rgba(255, 255, 255, 0.55); }
 
+/* a scene, script or button just pressed: a short press-in, and its icon lights up for a moment */
+.ctl.press { -webkit-animation: ranpress 0.45s ease-out; animation: ranpress 0.45s ease-out; }
+.ctl.ran .ic { background: var(--chip-on-bg); color: var(--chip-on-fg); }
+@-webkit-keyframes ranpress { 0% { -webkit-transform: scale(1.07); } 35% { -webkit-transform: scale(0.97); } 100% { -webkit-transform: scale(1.07); } }
+@keyframes ranpress { 0% { transform: scale(1.07); } 35% { transform: scale(0.97); } 100% { transform: scale(1.07); } }
+
 /* a sensor on Controls (Settings > Sensors location): the value where a switch has its icon */
 .ctl.sen .sv { font-size: 50px; font-weight: 300; line-height: 1; padding-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctl.sen.text .sv { font-size: 36px; font-weight: 400; padding-top: 10px; }

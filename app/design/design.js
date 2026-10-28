@@ -30,7 +30,11 @@
         power: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"><path d="M50 16 V48"/><path d="M33 27 A30 30 0 1 0 67 27"/></svg>',
         camera: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><rect x="12" y="30" width="54" height="40" rx="9"/><path d="M66 45 L88 33 V67 L66 55 Z"/></svg>',
         fan: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"><circle cx="50" cy="50" r="7"/><path d="M50 43 C46 26 52 16 62 18 C70 20 66 36 50 43 Z M57 50 C74 46 84 52 82 62 C80 70 64 66 57 50 Z M50 57 C54 74 48 84 38 82 C30 80 34 64 50 57 Z M43 50 C26 54 16 48 18 38 C20 30 36 34 43 50 Z"/></svg>',
-        plus: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 24 V76 M24 50 H76"/></svg>'
+        plus: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 24 V76 M24 50 H76"/></svg>',
+        // scenes, scripts and buttons on Controls (see RUN_DOMAINS)
+        palette: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><path d="M50 16 C29 16 15 31 15 50 C15 69 29 84 47 84 C54 84 57 79 55 73 C53 67 56 62 63 62 H71 C80 62 85 55 85 46 C85 28 70 16 50 16 Z"/><circle cx="33" cy="47" r="5" fill="currentColor" stroke="none"/><circle cx="44" cy="31" r="5" fill="currentColor" stroke="none"/><circle cx="62" cy="31" r="5" fill="currentColor" stroke="none"/><circle cx="72" cy="46" r="5" fill="currentColor" stroke="none"/></svg>',
+        script: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="22" y="16" width="56" height="68" rx="9"/><path d="M36 36 H64 M36 50 H64 M36 64 H52"/></svg>',
+        press: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6"><circle cx="50" cy="50" r="32"/><circle cx="50" cy="50" r="15" fill="currentColor" stroke="none"/></svg>'
     };
 
     var KEY = {
@@ -215,8 +219,11 @@
         'August', 'September', 'October', 'November', 'December'];
     var clockTimer = null;
 
+    var clockDay = '';
     function tickClock() {
         var d = new Date(), h = d.getHours();
+        if (clockDay && clockDay !== d.toDateString()) { renderWidgets(); }    // "Activated 23:40" becomes a date
+        clockDay = d.toDateString();
         $('time').textContent = cfg.clock24 ? pad(h) + ':' + pad(d.getMinutes())
             : ((h + 11) % 12 + 1) + ':' + pad(d.getMinutes()) + (h < 12 ? ' AM' : ' PM');
         $('date').textContent = DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
@@ -1497,7 +1504,18 @@
     // launch; after that HA pushes changes only for the entities on screen
     // (subscribe_entities with entity_ids), so the TV does almost no work.
 
-    var BUTTON_DOMAINS = { light: 1, 'switch': 1, input_boolean: 1, fan: 1 };
+    var BUTTON_DOMAINS = { light: 1, 'switch': 1, input_boolean: 1, fan: 1, scene: 1, script: 1, button: 1, input_button: 1 };
+
+    // Press-to-run entities on Controls: OK always runs them (never "off"), they're never shown as
+    // on (a script while it runs aside, which is its real state), and their state line says when
+    // they last ran. Scenes and buttons keep that time as their state; scripts in last_triggered.
+    var RUN_DOMAINS = {
+        scene: { service: 'turn_on', glyph: 'palette', label: 'Scene', did: 'Activated', verb: 'activate' },
+        script: { service: 'turn_on', glyph: 'script', label: 'Script', did: 'Last run', verb: 'run' },
+        button: { service: 'press', glyph: 'press', label: 'Button', did: 'Pressed', verb: 'press' },
+        input_button: { service: 'press', glyph: 'press', label: 'Button', did: 'Pressed', verb: 'press' }
+    };
+    function runOf(eid) { return RUN_DOMAINS[domainOf(eid)] || null; }
     var SENSOR_DOMAINS = { sensor: 1, binary_sensor: 1, weather: 1, climate: 1 };
     // Camera names often end in the stream they are: drop that on the tile.
     var CAMERA_SUFFIX = /[\s\-:_]*(live ?view|live|stream|fluent|clear|sub ?stream|main ?stream|sd|hd|low|high)$/i;
@@ -1530,7 +1548,7 @@
                 if (!st) { return; }
                 var a = st.attributes || {}, keep = {};
                 each(['friendly_name', 'unit_of_measurement', 'device_class', 'temperature', 'current_temperature', 'hvac_action', 'entity_picture',
-                    'brightness', 'supported_color_modes'],
+                    'brightness', 'supported_color_modes', 'last_triggered'],
                     function (k) { if (a[k] !== undefined) { keep[k] = a[k]; } });
                 states[eid] = { state: st.state, attributes: keep };
                 if (ha.entityArea[eid]) { entityArea[eid] = ha.entityArea[eid]; areas[ha.entityArea[eid]] = ha.areaName[ha.entityArea[eid]]; }
@@ -2311,12 +2329,31 @@
 
     function ctlIcon(eid) {
         var d = domainOf(eid);
+        if (RUN_DOMAINS[d]) { return RUN_DOMAINS[d].glyph; }
         return d === 'light' ? 'bulb' : d === 'fan' ? 'fan' : 'power';
+    }
+
+    // When a scene, script or button last ran: "20:15" today, "27 Oct" before; '' if never or unreadable.
+    function runWhen(iso) {
+        if (!iso || iso === 'unknown') { return ''; }
+        var t = Date.parse(String(iso).replace(/(\.\d{3})\d+/, '$1'));     // HA sends microseconds
+        if (isNaN(t)) { return ''; }
+        var d = new Date(t), now = new Date();
+        return d.toDateString() === now.toDateString() ? hhmm(d) : d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3);
+    }
+
+    function runState(eid) {
+        var st = ha.states[eid], r = runOf(eid);
+        if (st.state === 'unavailable') { return 'Unavailable'; }
+        if (domainOf(eid) === 'script' && st.state === 'on') { return 'Running'; }
+        var when = runWhen(domainOf(eid) === 'script' ? (st.attributes || {}).last_triggered : st.state);
+        return when ? r.did + ' ' + when : 'Not used yet';
     }
 
     function ctlState(eid) {
         var st = ha.states[eid];
         if (!st) { return '–'; }
+        if (runOf(eid)) { return runState(eid); }
         if (st.state === 'unavailable' || st.state === 'unknown') { return 'Unavailable'; }
         if (st.state === 'on') { return isDimmable(eid) ? 'On · ' + brightnessPct(eid) + '%' : 'On'; }
         if (st.state === 'off') { return 'Off'; }
@@ -2384,6 +2421,7 @@
                     var unav = !st || st.state === 'unavailable';
                     var on = isOn(eid), dimmable = !unav && isDimmable(eid);
                     html += '<div class="ctl' + (on ? ' on' : '') + (unav ? ' unav' : '') + (dimmable ? ' dimmable' : '') +
+                        (ranUntil[eid] > Date.now() ? ' ran' : '') +
                         ('eid:' + eid === focusKey ? ' focused' : '') +
                         '" data-key="eid:' + esc(eid) + '"><div class="ic">' + GLYPHS[ctlIcon(eid)] + '</div>' +
                         '<div class="txt"><div class="nm">' + esc(displayName(eid)) + '</div><div class="st">' + esc(ctlState(eid)) + '</div></div>' +
@@ -5107,6 +5145,7 @@
 
     function canDim(eid) {
         if (!eid) { return false; }
+        if (runOf(eid)) { toast(runOf(eid).label + 's can\'t be dimmed'); return false; }
         if (!isDimmable(eid)) { toast(displayName(eid) + ' can only be switched on and off'); return false; }
         if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return false; }
         return true;
@@ -5152,8 +5191,36 @@
         });
     }
 
+    // Scenes, scripts and buttons: always run, never switched off. No pretend state: Home Assistant's
+    // own update moves the "Activated" time. While a press is on its way, more presses on the same
+    // tile are ignored; the tile pulses so you see it landed.
+    var runBusy = {}, ranUntil = {};
+
+    function runEid(eid) {
+        var r = runOf(eid), st = ha.states[eid];
+        if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return; }
+        if (!st || st.state === 'unavailable') { toast(displayName(eid) + ' is unavailable'); return; }
+        if (runBusy[eid]) { return; }
+        runBusy[eid] = true;
+        var started = Date.now();
+        ranUntil[eid] = started + 1200;
+        renderControls(!ha.connected);
+        // the press-in goes on this element only, so a redraw when HA answers doesn't play it twice
+        var el = document.querySelector('#ctlTrack .ctl[data-key="eid:' + eid + '"]');
+        if (el) { el.className += ' press'; }
+        setTimeout(function () { renderControls(!ha.connected); }, 1250);
+        haSend('call_service', { domain: domainOf(eid), service: r.service, target: { entity_id: eid } }, function (ok, res, err) {
+            setTimeout(function () { delete runBusy[eid]; }, Math.max(0, 600 - (Date.now() - started)));
+            if (ok) { return; }
+            delete ranUntil[eid];
+            renderControls(!ha.connected);
+            toast('Couldn\'t ' + r.verb + ' ' + displayName(eid) + ': ' + ((err && err.message) || 'error'), 4000);
+        });
+    }
+
     function toggleEid(eid) {
         if (!eid) { return; }
+        if (runOf(eid)) { runEid(eid); return; }
         if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return; }
         var st = ha.states[eid];
         if (!st || st.state === 'unavailable') { toast(displayName(eid) + ' is unavailable'); return; }
@@ -5280,8 +5347,8 @@
         pickRow = 0;
         $('settings').hidden = true;
         $('picker').hidden = false;
-        $('pickHint').innerHTML = 'OK to show or hide &middot; ' + (cfg.senLoc === 'controls' ? 'Sensors, lights and switches on Controls'
-            : 'Sensors on Home, lights and switches on Controls') + ', cameras on Cameras &middot; Back to close';
+        $('pickHint').innerHTML = 'OK to show or hide &middot; ' + (cfg.senLoc === 'controls' ? 'Sensors, lights, switches and scenes on Controls'
+            : 'Sensors on Home, lights, switches and scenes on Controls') + ', cameras on Cameras &middot; Back to close';
         renderPicker();
         if (ha.connected) { haDiscover(); }   // refresh the list each time the picker opens
     }
@@ -5351,9 +5418,9 @@
                 li.innerHTML = '<span class="box"></span><span class="name"></span><span class="where"></span><span class="val"></span>';
                 li.children[1].textContent = displayName(eid);
                 var kind = kindOf(eid);
-                li.children[2].textContent = (kind === 'button' ? (isDimmable(eid) ? 'Dimmable light' : eid.indexOf('light.') === 0 ? 'Light' : 'Switch')
+                li.children[2].textContent = (kind === 'button' ? (runOf(eid) ? runOf(eid).label : isDimmable(eid) ? 'Dimmable light' : eid.indexOf('light.') === 0 ? 'Light' : 'Switch')
                     : kind === 'camera' ? 'Camera' : 'Sensor') + ' · ' + eid;
-                li.children[3].textContent = kind === 'camera' ? (f.dim ? '–' : cap((ha.states[eid] || {}).state || ''))
+                li.children[3].textContent = runOf(eid) ? ctlState(eid) : kind === 'camera' ? (f.dim ? '–' : cap((ha.states[eid] || {}).state || ''))
                     : f.value + (f.unit ? (f.unit === '°' ? '°' : ' ' + f.unit) : '');
                 frag.appendChild(li);
                 pickItems.push(eid);

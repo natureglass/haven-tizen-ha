@@ -59,7 +59,7 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
 
 - **Pages:** Home, Controls, Weather, Cameras, Library (once you sign in to Jellyfin) and
   Music (once you turn it on). Settings > **Screens** chooses which ones show and in what
-  order; Home is always first.
+  order, Home included. Haven opens on the first one, and Back leads there.
 - **Toolbar:** the bar at the top holds the Settings gear and a tab for each page. Press
   **Up** from the top of any page to reach it, Left / Right to go to another page (it slides
   as you move), OK or Down to go into the page, OK on the gear for Settings. Dots at the
@@ -70,10 +70,11 @@ opens it whenever the TV turns on, so in practice it becomes the home screen.
   apps in the dock, the cards fill the screen (all 30 fit). With the dock, three rows show
   and the rest scroll: Up from the dock moves into the cards, a bar at the side shows where
   you are, and Up from the top row reaches the toolbar.
-- **Controls:** a tile for each light and switch, grouped by room (rooms A to Z, anything
+- **Controls:** a tile for each light, switch, scene, script and button, grouped by room (rooms A to Z, anything
   without a room last under *Other*), in the order you picked them within each room. OK
   switches it on or off, CH + / CH - dims it right on the tile. Up to 48; the page scrolls
-  up and down if they don't all fit.
+  up and down if they don't all fit. With Settings > **Sensors location** on *Controls*, your
+  sensors join their rooms here too, instead of on Home.
 - **Weather:** your weather entity's forecast for the next seven days, with the current
   conditions, wind, humidity, sunrise and sunset. Two styles in Settings > **Weather style**:
   *Today and week* (a large card plus seven day columns) or *Next 24 hours and week* (an
@@ -304,15 +305,15 @@ it again to reinstall the app.
 
 | Key | Does |
 |---|---|
-| Arrows | Move between items on the page (the dock and sensors on Home, tiles on Controls and Cameras) |
+| Arrows | Move between items on the page (the dock and sensors on Home, tiles on Controls and Cameras; sensor tiles too when they're on Controls) |
 | Up from the top of a page | The toolbar: Left / Right for another page, OK on the gear for Settings, Down to go back into the page |
 | Right on the last item / Left on the first | Focus the round arrow at the side of the screen |
 | Right / Left again, or OK, on the arrow | Slide to the next page (the opposite arrow key goes back to where you were) |
-| OK | Open an app on Home; switch a light or switch on Controls; open a camera on Cameras |
+| OK | Open an app on Home; switch a light or switch, or run a scene, script or button, on Controls; open a camera on Cameras |
 | Left / Right on Weather | Move along the days; the large card shows the focused day |
 | CH + / CH - on a dimmable light (Controls) | Brightness up / down in 10 % steps, shown on the tile (down to 1 %, then off) |
 | Left / Right in a camera | Switch to the previous / next camera |
-| Back | Close a panel or camera; in a Music subfolder, go up; on any other page, go back to Home |
+| Back | Close a panel or camera; in a Music subfolder, go up; on any other page, go back to the first screen (Home, unless you changed it) |
 | Play / Pause, Stop, Fast-forward, Rewind | Music on any page: pause or play, stop, next song, previous song |
 | Yellow | Installed apps and status (design source, HA connection, camera player) |
 | Red, within 6 s of opening | Safe mode: the built-in design |
@@ -335,6 +336,11 @@ On a remote without CH keys, Page Up / Page Down do the same (handy in a browser
 - Tiles are grouped by room: rooms A to Z, anything without a room last under *Other*.
   Within a room they keep the order you ticked them in the picker.
 - A lit tile turns bright; dimmable lights show the level ("On · 60%") and a thin bar.
+- **Scenes, scripts and buttons** (`scene`, `script`, `button` and `input_button` entities) run
+  when you press OK; they're never switched off. The tile says when they last ran
+  ("Activated 20:15" today, "Activated 27 Oct" before, "Not used yet"), a script shows
+  *Running* while it runs, and the tile pulses when you press it. Pressing again before Home
+  Assistant has answered does nothing, so a double press runs it once.
 - **CH + / CH -** change the focused light's brightness on the tile itself, no pop-up.
   Holding a key sends one update to Home Assistant when you let go, not one per step. The
   first time you focus a dimmable light, Haven shows a short tip.
@@ -342,17 +348,31 @@ On a remote without CH keys, Page Up / Page Down do the same (handy in a browser
 - More than fit on the screen? The page scrolls up and down as you move, with soft edges
   and small arrows showing there's more.
 
-**Choosing screens:** Settings > **Screens** lists Home (always first) and the other five
-in their order. **OK** shows or hides one; **Right** picks it up, **Up / Down** move it, **OK**
-drops it. The toolbar, the dots and sliding follow at once. Library only appears while you're
-signed in to Jellyfin. Music starts hidden; tick it here to use it.
+**Choosing screens:** Settings > **Screens** lists all six screens in their order. **OK** shows
+or hides one; **Right** picks it up, **Up / Down** move it, **OK** drops it. The toolbar, the dots
+and sliding follow at once.
+- The first screen that's shown is where Haven opens and where **Back** takes you; the list
+  marks it. Home is first unless you move it.
+- Home can be hidden like the others, for a Haven that's only cameras or only music, say. Its
+  app dock goes with it: YouTube and the browser then open from the TV's own Home button.
+- At least one screen stays on. Library only appears while you're signed in to Jellyfin, so if
+  it's the only one ticked and you sign out, Home comes back.
+- Music starts hidden; tick it here to use it.
 
 **Choosing widgets:** Settings > **Home Assistant widgets**. It lists a
 *Suggested* section, then everything else grouped by area, with live values. OK ticks or
 unticks; items appear in the order you tick them. Each kind goes to its own page: sensors
 to Home (up to 30), lights and switches to Controls (up to 48), cameras to Cameras (up to
-9). Names are shortened by room, so "Living Room Temperature" shows as "Living Room".
+9). Scenes, scripts and buttons go to Controls with the lights. Names are shortened by room,
+so "Living Room Temperature" shows as "Living Room".
 Rename the entity in HA for a different label.
+
+**Sensors location:** Settings > **Sensors location** puts the sensors on *Home* (the default)
+or on *Controls*. On Controls each sensor joins its room, after that room's lights and
+switches, and sensors without a room go under *Other*. The room is the heading there, so a
+sensor shows the rest of its name: "Living Room Temperature" becomes "Temperature" under
+*Living Room*. OK and CH + / CH - do nothing on a sensor tile. Handy when Home is hidden in
+Settings > Screens; if the screen you pick is hidden, the setting says so.
 
 **Weather page:**
 - Uses the weather entity on your Home page, or the first one Haven finds (Met.no, which

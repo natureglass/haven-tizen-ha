@@ -30,7 +30,11 @@
         power: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"><path d="M50 16 V48"/><path d="M33 27 A30 30 0 1 0 67 27"/></svg>',
         camera: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><rect x="12" y="30" width="54" height="40" rx="9"/><path d="M66 45 L88 33 V67 L66 55 Z"/></svg>',
         fan: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"><circle cx="50" cy="50" r="7"/><path d="M50 43 C46 26 52 16 62 18 C70 20 66 36 50 43 Z M57 50 C74 46 84 52 82 62 C80 70 64 66 57 50 Z M50 57 C54 74 48 84 38 82 C30 80 34 64 50 57 Z M43 50 C26 54 16 48 18 38 C20 30 36 34 43 50 Z"/></svg>',
-        plus: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 24 V76 M24 50 H76"/></svg>'
+        plus: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 24 V76 M24 50 H76"/></svg>',
+        // scenes, scripts and buttons on Controls (see RUN_DOMAINS)
+        palette: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><path d="M50 16 C29 16 15 31 15 50 C15 69 29 84 47 84 C54 84 57 79 55 73 C53 67 56 62 63 62 H71 C80 62 85 55 85 46 C85 28 70 16 50 16 Z"/><circle cx="33" cy="47" r="5" fill="currentColor" stroke="none"/><circle cx="44" cy="31" r="5" fill="currentColor" stroke="none"/><circle cx="62" cy="31" r="5" fill="currentColor" stroke="none"/><circle cx="72" cy="46" r="5" fill="currentColor" stroke="none"/></svg>',
+        script: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="22" y="16" width="56" height="68" rx="9"/><path d="M36 36 H64 M36 50 H64 M36 64 H52"/></svg>',
+        press: '<svg class="glyph" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6"><circle cx="50" cy="50" r="32"/><circle cx="50" cy="50" r="15" fill="currentColor" stroke="none"/></svg>'
     };
 
     var KEY = {
@@ -60,7 +64,9 @@
         { key: '_screens', label: 'Screens', action: 'screens' },
         { key: '_apps', label: 'Apps in the dock', action: 'apps' },
         { key: '_widgets', label: 'Home Assistant widgets', action: 'widgets' },
+        { key: 'senLoc', label: 'Sensors location', options: [['home', 'Home'], ['controls', 'Controls']] },
         { key: '_jellyfin', label: 'Jellyfin', action: 'jellyfin' },
+        { key: 'musDir', label: 'Music folder', options: [] },            // filled in by musDirOptions()
         { key: '_address', label: 'Home Assistant address', action: 'address' },
         { key: '_update', label: 'Check for design update', action: 'update' },
         { key: '_diag', label: 'Installed apps and status', action: 'diag' }
@@ -69,12 +75,21 @@
     // widgets: entity IDs in display order; null = never chosen, so suggestions get picked.
     // dockApps: app IDs in dock order; null = never chosen, so YouTube and Internet are used.
     var DEFAULTS = { interval: 60, source: 'both', motion: false, season: 'auto', wxStyle: 'a', jfConvert: 'audio', jfMaxRes: 'auto', jfLibrary: 'show', theme: 'dark', clock24: true,
-        icons: 'simple', captions: true, focus: 0, widgets: null, dockApps: null, screens: null, screensOff: null };
+        icons: 'simple', captions: true, focus: 0, widgets: null, dockApps: null, screens: null, screensOff: null,
+        musDir: '', musDirName: '', musShuffle: false, musRepeat: 'all', senLoc: 'home' };
     var cfg = {};
     (function () {
         for (var k in DEFAULTS) { if (DEFAULTS.hasOwnProperty(k)) { cfg[k] = H.get(k, DEFAULTS[k]); } }
         // Settings > Jellyfin > Library page: Hide (before Settings > Screens existed)
         if (cfg.screensOff === null && cfg.jfLibrary === 'hide') { cfg.screensOff = ['library']; }
+        // Music arrives switched off, once; after that Settings > Screens decides
+        if (!H.get('musIntro', false)) {
+            var off = (cfg.screensOff || []).slice(0);
+            if (off.indexOf('music') < 0) { off.push('music'); }
+            cfg.screensOff = off;
+            H.set('screensOff', off);
+            H.set('musIntro', true);
+        }
     }());
 
     function save(key) { H.set(key, cfg[key]); }
@@ -123,10 +138,13 @@
                 '<section class="page" id="pageWeather"><section id="wxArea"></section></section>' +     // pages in id order (P_HOME .. P_LIB); where each sits on screen comes from ORDER
                 '<section class="page" id="pageCameras"><section id="camArea"></section></section>' +
                 '<section class="page" id="pageLibrary"><section id="libArea"></section><section id="libDetail"></section></section>' +
+                '<section class="page" id="pageMusic"><section id="musArea"></section></section>' +
             '</div>' +
             '<div id="tabs"></div>' +
             '<header id="clock"><div id="time">--:--</div><div id="date"></div></header>' +
             '<div id="haStatus"></div>' +
+            '<div id="musMini" hidden><span class="eq"><i></i><i></i><i></i></span><span id="musMiniText"></span><b class="mb"><i id="musMiniFill"></i></b></div>' +
+            '<audio id="musAudio"></audio>' +
             '<div id="edgeL" class="edge l"></div><div id="edgeR" class="edge r"></div>' +
             '<div id="dots"></div>' +
             '<section id="player" hidden>' +
@@ -155,9 +173,9 @@
                 '<p class="hint">Up / Down to choose &middot; Left / Right to change &middot; Back to close</p></div></section>' +
             '<section id="picker" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Home Assistant widgets</h2><p id="pickCount" class="hint left"></p><ul id="pickList" class="picklist"></ul>' +
-                '<p class="hint">OK to show or hide &middot; Sensors on Home, lights and switches on Controls, cameras on Cameras &middot; Back to close</p></div></section>' +
+                '<p class="hint" id="pickHint"></p></div></section>' +
             '<section id="screens" class="overlay" hidden><div class="panel">' +
-                '<h2>Screens</h2><p class="hint left">The screens you slide between, in this order. Home is always first.</p>' +
+                '<h2>Screens</h2><p class="hint left">The screens you slide between, in this order. Haven opens on the first one.</p>' +
                 '<ul id="scrList" class="picklist"></ul><p id="scrHint" class="hint"></p></div></section>' +
             '<section id="apps" class="overlay" hidden><div class="panel wide">' +
                 '<h2>Apps in the dock</h2><p id="appsCount" class="hint left"></p><ul id="appsList" class="picklist"></ul>' +
@@ -201,8 +219,11 @@
         'August', 'September', 'October', 'November', 'December'];
     var clockTimer = null;
 
+    var clockDay = '';
     function tickClock() {
         var d = new Date(), h = d.getHours();
+        if (clockDay && clockDay !== d.toDateString()) { renderWidgets(); }    // "Activated 23:40" becomes a date
+        clockDay = d.toDateString();
         $('time').textContent = cfg.clock24 ? pad(h) + ':' + pad(d.getMinutes())
             : ((h + 11) % 12 + 1) + ':' + pad(d.getMinutes()) + (h < 12 ? ' AM' : ' PM');
         $('date').textContent = DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
@@ -1483,7 +1504,18 @@
     // launch; after that HA pushes changes only for the entities on screen
     // (subscribe_entities with entity_ids), so the TV does almost no work.
 
-    var BUTTON_DOMAINS = { light: 1, 'switch': 1, input_boolean: 1, fan: 1 };
+    var BUTTON_DOMAINS = { light: 1, 'switch': 1, input_boolean: 1, fan: 1, scene: 1, script: 1, button: 1, input_button: 1 };
+
+    // Press-to-run entities on Controls: OK always runs them (never "off"), they're never shown as
+    // on (a script while it runs aside, which is its real state), and their state line says when
+    // they last ran. Scenes and buttons keep that time as their state; scripts in last_triggered.
+    var RUN_DOMAINS = {
+        scene: { service: 'turn_on', glyph: 'palette', label: 'Scene', did: 'Activated', verb: 'activate' },
+        script: { service: 'turn_on', glyph: 'script', label: 'Script', did: 'Last run', verb: 'run' },
+        button: { service: 'press', glyph: 'press', label: 'Button', did: 'Pressed', verb: 'press' },
+        input_button: { service: 'press', glyph: 'press', label: 'Button', did: 'Pressed', verb: 'press' }
+    };
+    function runOf(eid) { return RUN_DOMAINS[domainOf(eid)] || null; }
     var SENSOR_DOMAINS = { sensor: 1, binary_sensor: 1, weather: 1, climate: 1 };
     // Camera names often end in the stream they are: drop that on the tile.
     var CAMERA_SUFFIX = /[\s\-:_]*(live ?view|live|stream|fluent|clear|sub ?stream|main ?stream|sd|hd|low|high)$/i;
@@ -1516,7 +1548,7 @@
                 if (!st) { return; }
                 var a = st.attributes || {}, keep = {};
                 each(['friendly_name', 'unit_of_measurement', 'device_class', 'temperature', 'current_temperature', 'hvac_action', 'entity_picture',
-                    'brightness', 'supported_color_modes'],
+                    'brightness', 'supported_color_modes', 'last_triggered'],
                     function (k) { if (a[k] !== undefined) { keep[k] = a[k]; } });
                 states[eid] = { state: st.state, attributes: keep };
                 if (ha.entityArea[eid]) { entityArea[eid] = ha.entityArea[eid]; areas[ha.entityArea[eid]] = ha.areaName[ha.entityArea[eid]]; }
@@ -1618,6 +1650,7 @@
             ha.retryMs = 2000;
             ha.status = 'connected';
             if (ha.discovered) { haSubscribe(); } else { haDiscover(); }
+            musOnConnect();
         } else if (msg.type === 'auth_invalid') {
             ha.authFailed = true;
             ha.status = 'token rejected, check haToken in shell-config.js';
@@ -1886,36 +1919,44 @@
 
     // A page's number is its identity (and its place in #pages); ORDER is what's shown, left to right
     // (Settings > Screens). Home is always there and always first.
-    var PAGE_NAMES = ['Home', 'Controls', 'Weather', 'Cameras', 'Library'];
-    var PAGE_KEYS = ['home', 'controls', 'weather', 'cameras', 'library'];
+    var PAGE_NAMES = ['Home', 'Controls', 'Weather', 'Cameras', 'Library', 'Music'];
+    var PAGE_KEYS = ['home', 'controls', 'weather', 'cameras', 'library', 'music'];
     var P_HOME = 0, P_CTL = 1, P_WX = 2, P_CAM = 3;
     var ORDER = [0, 1, 2, 3];
     var tabFocus = null;      // the toolbar at the top has the focus: 0 = the gear, 1.. = ORDER[n - 1]
     var tabsSig = '';
     var page = 0;
-    var sel = ['dock', null, null, null, null];   // focus per page: 'dock', 'edge:l', 'edge:r', 'eid:<id>', 'cam:<id>', 'day:<n>', 'lib'
-    var selBeforeEdge = [null, null, null, null, null];
+    var sel = ['dock', null, null, null, null, null];   // focus per page: 'dock', 'edge:l', 'edge:r', 'eid:<id>', 'cam:<id>', 'day:<n>', 'lib', 'mus'
+    var selBeforeEdge = [null, null, null, null, null, null];
     var pageTimer = null;
 
     function pos(p) { return ORDER.indexOf(p); }
     function hasSide(p, side) { var i = pos(p); return side === 'l' ? i > 0 : i >= 0 && i < ORDER.length - 1; }
     function neighbor(p, dir) { return ORDER[pos(p) + dir]; }
 
-    // The four optional screens in the chosen order (shown or not).
+    // Every screen in the chosen order (shown or not). Home is first unless you moved it; an order
+    // saved before Home could move doesn't list it, so it goes in front.
     function screensList() {
         var out = [], seen = {}, i;
-        each(cfg.screens || [], function (k) { i = PAGE_KEYS.indexOf(k); if (i > 0 && !seen[i]) { seen[i] = true; out.push(i); } });
+        each(cfg.screens || [], function (k) { i = PAGE_KEYS.indexOf(k); if (i >= 0 && !seen[i]) { seen[i] = true; out.push(i); } });
+        if (!seen[P_HOME]) { seen[P_HOME] = true; out.unshift(P_HOME); }
         for (i = 1; i < PAGE_KEYS.length; i++) { if (!seen[i]) { out.push(i); } }
         return out;
     }
 
     function screenOn(p) { return (cfg.screensOff || []).indexOf(PAGE_KEYS[p]) < 0; }
 
+    // A screen that's ticked and can show now (Library needs a Jellyfin sign-in).
+    function screenShows(p, off) { return (off || cfg.screensOff || []).indexOf(PAGE_KEYS[p]) < 0 && (p !== P_LIB || jfSignedIn()); }
+
     function computeOrder() {
-        var o = [P_HOME];
-        each(screensList(), function (p) { if (screenOn(p) && (p !== P_LIB || jfSignedIn())) { o.push(p); } });
-        return o;
+        var o = [];
+        each(screensList(), function (p) { if (screenShows(p)) { o.push(p); } });
+        return o.length ? o : [P_HOME];       // never nothing: Home, if every screen that's ticked can't show
     }
+
+    // The first screen: where Haven opens and where Back leads.
+    function startPage() { return ORDER[0]; }
 
     // Puts every shown page at its slot in the strip; the others are taken out.
     function pagesUpdate() {
@@ -1929,7 +1970,7 @@
         if (pos(page) < 0) {
             page = -1;
             if (tabFocus !== null) { tabFocus = 1; }
-            showPage(P_HOME);
+            showPage(startPage());
         } else {
             $('pages').style.transform = 'translate3d(' + (-1920 * pos(page)) + 'px,0,0)';
             if (tabFocus !== null) { tabFocus = Math.min(tabFocus, ORDER.length); }
@@ -1949,6 +1990,7 @@
                 : (items.length ? items[0].key : 'edge:' + (hasSide(p, dir > 0 ? 'r' : 'l') ? (dir > 0 ? 'r' : 'l') : (dir > 0 ? 'l' : 'r')));
         }
         if (p === 0 && dir < 0 && sel[0] === 'dock') { focus = tiles.length - 1; }   // back from Controls: the dock's last tile
+        if (p === 0 && dir > 0 && sel[0] === 'dock' && pos(p) > 0) { focus = 0; }    // from a screen before Home: the first tile
         each(document.querySelectorAll('#pages .page'), function (el) { el.style.visibility = 'visible'; });
         $('pages').style.transform = 'translate3d(' + (-1920 * pos(p)) + 'px,0,0)';
         clearTimeout(pageTimer);
@@ -1960,6 +2002,7 @@
         refreshCamStills();
         updateFx();
         if (p === P_LIB) { libLoad(false); }
+        if (p === P_MUS) { musLoad(false); }
     }
 
     // Toolbar (gear and tabs), dots, edge arrows and the darker veil behind the other pages.
@@ -1977,6 +2020,7 @@
         $('veil').className = page ? 'on' : '';
         $('edgeL').innerHTML = '<span class="chev">&lsaquo;</span><span class="lbl">' + (PAGE_NAMES[neighbor(page, -1)] || '') + '</span>';
         $('edgeR').innerHTML = '<span class="lbl">' + (PAGE_NAMES[neighbor(page, 1)] || '') + '</span><span class="chev">&rsaquo;</span>';
+        musMini();
     }
 
     function renderTabs() {
@@ -2000,6 +2044,7 @@
     function pageCanFocus(p) {
         if (p === P_HOME) { return dockApps().length > 0 || sensorsFocusable(); }
         if (p === P_LIB) { return !!lib.loadedAt; }
+        if (p === P_MUS) { return musHasFocus(); }
         return itemsOf(p).length > 0;
     }
 
@@ -2012,6 +2057,8 @@
             if (String(sel[0]).indexOf('sen:') === 0 && !itemByKey(0, sel[0])) { sel[0] = 'dock'; }
         } else if (p === P_LIB) {
             sel[p] = 'lib';
+        } else if (p === P_MUS) {
+            sel[p] = 'mus';
         } else if (!sel[p] || sel[p].indexOf('edge:') === 0 || !itemByKey(p, sel[p])) {
             var back = selBeforeEdge[p] && itemByKey(p, selBeforeEdge[p]) ? selBeforeEdge[p] : itemsOf(p)[0].key;
             sel[p] = back;
@@ -2019,8 +2066,17 @@
         applyFocus();
     }
 
+    // The focus was put on the toolbar only because the page had nothing yet: it goes into the page
+    // once it has something, unless you've used the toolbar since.
+    var tabParked = false;
+    function unpark() {
+        if (tabParked && tabFocus !== null && mode === 'dock') { tabFocus = null; }
+        tabParked = false;
+    }
+
     function onTabsKey(k) {
         var n = ORDER.length + 1;
+        tabParked = false;
         if (k === KEY.LEFT || k === KEY.RIGHT) {
             var to = tabFocus + (k === KEY.LEFT ? -1 : 1);
             if (to < 0 || to >= n) { return true; }
@@ -2031,7 +2087,7 @@
         } else if (k === KEY.DOWN) {
             leaveTabs();
         } else if (isBack(k)) {
-            if (page !== P_HOME) { tabFocus = pos(P_HOME) + 1; showPage(P_HOME); } else { leaveTabs(); }
+            if (page !== startPage()) { tabFocus = 1; showPage(startPage()); } else { leaveTabs(); }
         } else if (k !== KEY.UP) {
             return false;
         }
@@ -2042,6 +2098,7 @@
     function itemsOf(p) {
         var out = [];
         if (p === P_LIB) { return lib.loadedAt ? [{ key: 'lib', el: $('libArea'), x: 0, y: 0, w: 1, h: 1 }] : []; }
+        if (p === P_MUS) { return musHasFocus() ? [{ key: 'mus', el: $('musArea'), x: 0, y: 0, w: 1, h: 1 }] : []; }
         var nodes = p === P_CTL ? document.querySelectorAll('#ctlTrack .ctl') : p === P_CAM ? document.querySelectorAll('#camArea .camtile')
             : p === P_WX ? document.querySelectorAll('#wxArea .wday') : p === P_HOME && sensorsFocusable() ? document.querySelectorAll('#sensors .scard') : [];
         each(nodes, function (el) {
@@ -2058,6 +2115,12 @@
 
     function applyFocus() {
         if (tabFocus === null && page === P_HOME && mode === 'dock' && !homeHasFocus()) { tabFocus = pos(P_HOME) + 1; }
+        // an arrow toward a side that has no screen (the only screen shown, with nothing on it yet): the toolbar
+        var es = String(sel[page] || '');
+        if (tabFocus === null && page !== P_HOME && mode === 'dock' && es.indexOf('edge:') === 0 && !hasSide(page, es.slice(5))) {
+            tabFocus = pos(page) + 1;
+            tabParked = true;
+        }
         var s = tabFocus === null ? sel[page] : null;   // on the toolbar, nothing on the page shows focus
         renderTabs();
         renderDock();
@@ -2071,6 +2134,7 @@
         if (page === 1) { scrollControls(); if (s) { maybeDimHint(); } }
         if (page === P_WX) { wxFollowFocus(); }
         libApplyFocus();
+        musApplyFocus();
     }
 
     function toEdge(side) {
@@ -2122,12 +2186,13 @@
                 sel[page] = selBeforeEdge[page] && (page === 0 || itemByKey(page, selBeforeEdge[page])) ? selBeforeEdge[page]
                     : (page === 0 ? 'dock' : (itemsOf(page)[0] || {}).key || s);
                 applyFocus();
-            } else if (isBack(k) && page > 0) { showPage(0); }
+            } else if (isBack(k) && page !== startPage()) { showPage(startPage()); }
             else if (k === KEY.UP) { toTabs(); }
             else if (k !== KEY.DOWN) { return false; }
             return true;
         }
         if (page === P_LIB) { return onLibKey(k); }
+        if (page === P_MUS) { return onMusKey(k); }
         if (page === 0 && s.indexOf('sen:') === 0) {
             if (k === KEY.LEFT) { moveSpatial(-1, 0); }
             else if (k === KEY.RIGHT) { moveSpatial(1, 0); }
@@ -2139,11 +2204,11 @@
             return true;
         }
         if (page === 0) {
-            if (k === KEY.LEFT) { if (focus > 0) { focus--; renderDock(); } }
+            if (k === KEY.LEFT) { if (focus > 0) { focus--; renderDock(); } else { toEdge('l'); } }   // a screen before Home, if you moved it
             else if (k === KEY.RIGHT) { if (focus < tiles.length - 1) { focus++; renderDock(); } else { toEdge('r'); } }
             else if (k === KEY.UP) { if (sensorsFocusable()) { senEnter(); } else { toTabs(); } }
             else if (k === KEY.ENTER) { activateTile(tiles[focus]); }
-            else if (isBack(k)) { /* home screen: Back does nothing; Home and Exit still work */ }
+            else if (isBack(k)) { showPage(startPage()); }     // as the first screen, Back does nothing; Home and Exit still work
             else { return false; }
             return true;
         }
@@ -2151,7 +2216,7 @@
         else if (k === KEY.RIGHT) { moveSpatial(1, 0); }
         else if (k === KEY.UP) { moveSpatial(0, -1); }
         else if (k === KEY.DOWN) { moveSpatial(0, 1); }
-        else if (isBack(k)) { showPage(0); }
+        else if (isBack(k)) { showPage(startPage()); }
         else if (page === 1 && k === KEY.ENTER) { if (s.indexOf('eid:') === 0) { toggleEid(s.slice(4)); } }
         else if (page === 1 && (k === KEY.CH_UP || k === KEY.PAGE_UP)) { nudgeBrightness(1); }
         else if (page === 1 && (k === KEY.CH_DOWN || k === KEY.PAGE_DOWN)) { nudgeBrightness(-1); }
@@ -2176,6 +2241,12 @@
         renderControls(stale);
         renderCameras(stale);
         renderWeather(stale);
+        // arrived (at start-up, say) while the page had nothing to focus, so the focus went to the
+        // arrow at the side: its first item, now that it has one
+        if (page !== P_HOME && page !== P_LIB && page !== P_MUS && String(sel[page] || '').indexOf('edge:') === 0 && !selBeforeEdge[page]) {
+            var first = itemsOf(page)[0];
+            if (first) { sel[page] = first.key; unpark(); }
+        }
         applyFocus();
         buildDock();
     }
@@ -2185,7 +2256,10 @@
     // dock moves into the cards, and a bar at the side shows where you are.
     var SEN_COLS = 6, SEN_ROW_H = 150, homeHtml = '', senTop = 0;
 
-    function sensorRows() { return Math.ceil(Math.min(selectedOf('sensor').length, MAX_SENSORS) / SEN_COLS); }
+    // Sensors are on Home unless Settings > Sensors location puts them on Controls.
+    function homeSensors() { return cfg.senLoc === 'controls' ? [] : selectedOf('sensor').slice(0, MAX_SENSORS); }
+    function ctlSensors() { return cfg.senLoc === 'controls' ? selectedOf('sensor').slice(0, MAX_SENSORS) : []; }
+    function sensorRows() { return Math.ceil(homeSensors().length / SEN_COLS); }
     function sensorRowsVisible() { return dockApps().length ? 3 : 5; }
     function sensorsFocusable() { return !$('senBox').hidden && sensorRows() > sensorRowsVisible(); }
 
@@ -2233,7 +2307,7 @@
     }
 
     function renderHome(stale) {
-        var sensors = selectedOf('sensor').slice(0, MAX_SENSORS), html = '', anyKnown = false;
+        var sensors = homeSensors(), html = '', anyKnown = false;
         var focusKey = tabFocus === null && page === P_HOME ? sel[0] : null;
         each(sensors, function (eid) {
             var f = formatState(eid);
@@ -2255,12 +2329,31 @@
 
     function ctlIcon(eid) {
         var d = domainOf(eid);
+        if (RUN_DOMAINS[d]) { return RUN_DOMAINS[d].glyph; }
         return d === 'light' ? 'bulb' : d === 'fan' ? 'fan' : 'power';
+    }
+
+    // When a scene, script or button last ran: "20:15" today, "27 Oct" before; '' if never or unreadable.
+    function runWhen(iso) {
+        if (!iso || iso === 'unknown') { return ''; }
+        var t = Date.parse(String(iso).replace(/(\.\d{3})\d+/, '$1'));     // HA sends microseconds
+        if (isNaN(t)) { return ''; }
+        var d = new Date(t), now = new Date();
+        return d.toDateString() === now.toDateString() ? hhmm(d) : d.getDate() + ' ' + MONTHS[d.getMonth()].slice(0, 3);
+    }
+
+    function runState(eid) {
+        var st = ha.states[eid], r = runOf(eid);
+        if (st.state === 'unavailable') { return 'Unavailable'; }
+        if (domainOf(eid) === 'script' && st.state === 'on') { return 'Running'; }
+        var when = runWhen(domainOf(eid) === 'script' ? (st.attributes || {}).last_triggered : st.state);
+        return when ? r.did + ' ' + when : 'Not used yet';
     }
 
     function ctlState(eid) {
         var st = ha.states[eid];
         if (!st) { return '–'; }
+        if (runOf(eid)) { return runState(eid); }
         if (st.state === 'unavailable' || st.state === 'unknown') { return 'Unavailable'; }
         if (st.state === 'on') { return isDimmable(eid) ? 'On · ' + brightnessPct(eid) + '%' : 'On'; }
         if (st.state === 'off') { return 'Off'; }
@@ -2285,23 +2378,50 @@
         return out;
     }
 
+    // A sensor's name on Controls, where its room is the heading: "Living Room Temperature" is
+    // "Temperature" there (on Home it's "Living Room").
+    function ctlSensorName(eid) {
+        var st = ha.states[eid], a = (st && st.attributes) || {}, area = areaOf(eid);
+        var name = a.friendly_name || cap(eid.split('.')[1].replace(/_/g, ' '));
+        if (domainOf(eid) === 'weather' && /^(forecast\b.*|home|weather)$/i.test(name)) { return 'Outside'; }
+        if (area && name.toLowerCase().indexOf(area.toLowerCase()) === 0) {
+            var rest = name.slice(area.length).replace(/^[\s\-:]+/, '');
+            if (rest) { return cap(rest); }
+            if (a.device_class) { return cap(String(a.device_class).replace(/_/g, ' ')); }
+            return domainOf(eid) === 'climate' ? 'Thermostat' : name;
+        }
+        return name;
+    }
+
+    // A sensor as a Controls tile: the value large, the name and any note below. OK and CH do nothing on it.
+    function ctlSensorTile(eid, focused) {
+        var f = formatState(eid);
+        return '<div class="ctl sen' + (f.dim ? ' unav' : '') + (f.text ? ' text' : '') + (focused ? ' focused' : '') +
+            '" data-key="sen:' + esc(eid) + '"><div class="sv">' + esc(f.value) +
+            (f.unit === '°' ? '°' : (f.unit ? '<span class="unit">' + esc(f.unit) + '</span>' : '')) + '</div>' +
+            '<div class="txt"><div class="nm">' + esc(ctlSensorName(eid)) + '</div><div class="st">' + esc(f.note || '') + '</div></div></div>';
+    }
+
     // Redrawn only when something on it changed, with the focused tile already marked: a fresh
     // tile without the mark would shrink and grow again (a second bounce) on every HA update.
     var ctlHtml = '';
 
     function renderControls(stale) {
-        var buttons = selectedOf('button').slice(0, MAX_BUTTONS), html = '';
-        var focusKey = tabFocus === null && page === P_CTL ? sel[1] : null;
-        if (!buttons.length) {
-            html = emptyHtml('lights and switches', '');
+        var buttons = selectedOf('button').slice(0, MAX_BUTTONS), sensors = ctlSensors(), html = '';
+        var focusKey = tabFocus === null && page === P_CTL ? sel[1] : null, isSensor = {};
+        each(sensors, function (eid) { isSensor[eid] = true; });
+        if (!buttons.length && !sensors.length) {
+            html = emptyHtml(cfg.senLoc === 'controls' ? 'sensors, lights and switches' : 'lights and switches', '');
         } else {
-            each(roomsOf(buttons), function (room) {
+            each(roomsOf(buttons.concat(sensors)), function (room) {     // in each room: lights and switches, then sensors
                 html += '<div class="room"><h3>' + esc(room.name) + '</h3><div class="ts">';
                 each(room.eids, function (eid) {
+                    if (isSensor[eid]) { html += ctlSensorTile(eid, 'sen:' + eid === focusKey); return; }
                     var st = ha.states[eid];
                     var unav = !st || st.state === 'unavailable';
                     var on = isOn(eid), dimmable = !unav && isDimmable(eid);
                     html += '<div class="ctl' + (on ? ' on' : '') + (unav ? ' unav' : '') + (dimmable ? ' dimmable' : '') +
+                        (ranUntil[eid] > Date.now() ? ' ran' : '') +
                         ('eid:' + eid === focusKey ? ' focused' : '') +
                         '" data-key="eid:' + esc(eid) + '"><div class="ic">' + GLYPHS[ctlIcon(eid)] + '</div>' +
                         '<div class="txt"><div class="nm">' + esc(displayName(eid)) + '</div><div class="st">' + esc(ctlState(eid)) + '</div></div>' +
@@ -2313,7 +2433,7 @@
         if (html !== ctlHtml) { ctlHtml = html; $('ctlTrack').innerHTML = html; }
         $('ctlArea').className = $('ctlArea').className.replace(/\s*stale/g, '') + (stale ? ' stale' : '');
         var s = sel[1];
-        if (s && s.indexOf('eid:') === 0 && !itemByKey(1, s)) { sel[1] = null; }
+        if (s && (s.indexOf('eid:') === 0 || s.indexOf('sen:') === 0) && !itemByKey(1, s)) { sel[1] = null; }
         if (!sel[1] && page === 1) {
             var items = itemsOf(1);
             sel[1] = items.length ? items[0].key : 'edge:r';
@@ -2324,7 +2444,7 @@
     function scrollControls() {
         var box = $('ctlArea'), track = $('ctlTrack');
         var boxH = box.clientHeight, trackH = track.offsetHeight, y = 0;
-        var it = sel[1] && sel[1].indexOf('eid:') === 0 ? itemByKey(1, sel[1]) : null;
+        var it = sel[1] && (sel[1].indexOf('eid:') === 0 || sel[1].indexOf('sen:') === 0) ? itemByKey(1, sel[1]) : null;
         if (trackH > boxH && it) {
             var room = it.el.parentNode.parentNode;
             var top = it.y - room.offsetTop < 80 ? room.offsetTop : it.y;
@@ -2671,6 +2791,7 @@
             libKeepFocus();
             var arrived = page === P_LIB && String(sel[P_LIB] || '').indexOf('edge:') === 0 && !selBeforeEdge[P_LIB];
             if (arrived) { sel[P_LIB] = 'lib'; }
+            if (page === P_LIB && tabParked) { unpark(); arrived = true; }
             libRender();
             if (arrived) { applyFocus(); }           // the arrow loses its highlight, the first card gets it
         }, function (e) {
@@ -2983,7 +3104,7 @@
             if (k === KEY.LEFT) { toEdge('l'); return true; }
             if (k === KEY.RIGHT) { toEdge('r'); return true; }
             if (k === KEY.UP) { toTabs(); return true; }
-            if (isBack(k)) { showPage(0); return true; }
+            if (isBack(k)) { showPage(startPage()); return true; }
             return k === KEY.DOWN || k === KEY.ENTER;
         }
         var R = libRows()[lib.row];
@@ -2996,7 +3117,7 @@
         else if (k === KEY.ENTER) {
             if (R && R.k === 'chips') { libSetSort(LIB_SORTS[lib.col][0]); }
             else { var it = libItemAt(lib.row, lib.col); if (it) { libOpenDetail(it); } }
-        } else if (isBack(k)) { showPage(0); }
+        } else if (isBack(k)) { showPage(startPage()); }
         else { return false; }
         return true;
     }
@@ -3395,6 +3516,7 @@
     // item: the full item (MediaSources, Chapters); opts: { start (s), audio, sub (indexes into libStreams lists, sub -1 = off) }
     function vpOpen(item, opts) {
         opts = opts || {};
+        musHold('video');
         vpStopEngine();
         var tok = ++vp.tok;
         vp.item = item;
@@ -3550,6 +3672,7 @@
         scheduleWalls();
         updateFx();
         applyFocus();
+        musUnhold('video', true);
         if (report && item) {
             var after = function () { libAfterPlay(item, tracks); };
             report.then(after, after);
@@ -3912,6 +4035,1107 @@
         if (d && d.item && d.item.Id === item.Id) { libOpenDetail(d.item, { audio: tracks.audio, sub: tracks.sub, full: d.full }); }
     }
 
+    // ------------------------------------------------------------------ Music page
+    //
+    // The optional 6th page, off until you turn it on in Settings > Screens: songs from Home
+    // Assistant's media folder (My media, /media on Home Assistant OS), played by the TV itself.
+    // Home Assistant lists the folder over the widgets' WebSocket (media_source/browse_media) and
+    // hands out a signed link per file (media_source/resolve_media, valid 24 hours), so nothing
+    // needs installing on Home Assistant. A plain <audio> element plays it, which keeps AVPlay free
+    // for the cameras and films; those pause the music while they're open and resume it after.
+    // The music keeps playing while you move between pages: a small player at the top left shows
+    // what's on, and the remote's media keys work on every page. Title, artist and cover come from
+    // the MP3 tags of the song that's playing and the next one only (never the whole folder), and
+    // the names and lengths learnt that way are kept, so the list shows them from then on.
+
+    var P_MUS = 5;
+    var MUS_ROOT = 'media-source://media_source';
+    var MUS_ROW_H = 66, MUS_LIST_H = 470, MUS_PAGE_ROWS = 7, MUS_KEEP = 400;
+    var MUS_ART = /^(cover|folder|front|album)\.(jpe?g|png)$/i;
+    var MUS_FORMATS = [['MP3', 'audio/mpeg'], ['AAC', 'audio/mp4'], ['FLAC', 'audio/flac'], ['OGG', 'audio/ogg'], ['WAV', 'audio/wav']];
+    var MUS_ICON = {
+        play: '<svg class="glyph" viewBox="0 0 100 100"><path d="M38 26 L76 50 L38 74 Z" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>',
+        pause: '<svg class="glyph" viewBox="0 0 100 100" fill="currentColor"><rect x="30" y="26" width="14" height="48" rx="4"/><rect x="56" y="26" width="14" height="48" rx="4"/></svg>',
+        prev: '<svg class="glyph" viewBox="0 0 100 100"><path d="M72 28 L40 50 L72 72 Z" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M30 28 V72" stroke="currentColor" stroke-width="8" stroke-linecap="round"/></svg>',
+        next: '<svg class="glyph" viewBox="0 0 100 100"><path d="M28 28 L60 50 L28 72 Z" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M70 28 V72" stroke="currentColor" stroke-width="8" stroke-linecap="round"/></svg>',
+        note: '<svg class="glyph" viewBox="0 0 100 100"><path d="M40 70 V30 L76 22 V62" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><circle cx="31" cy="70" r="10" fill="currentColor"/><circle cx="67" cy="62" r="10" fill="currentColor"/></svg>',
+        folder: '<svg class="glyph" viewBox="0 0 100 100"><path d="M14 30 H40 L48 38 H86 V74 H14 Z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/></svg>'
+    };
+    var MUS_HELD = { camera: 'Paused while a camera is open', video: 'Paused while a film plays', hidden: 'Paused' };
+
+    var mus = {
+        dirs: null, autoRoot: '', autoTitle: '', path: [], items: [], playable: [], dirArt: {},
+        loadedAt: 0, loading: false, error: '', gen: 0, f: null, scrollY: 0, focusShown: false,
+        queue: [], order: [], qi: -1, active: false, playing: false, buffering: false, tok: 0, pos: 0, dur: 0, startAt: 0,
+        fails: 0, held: null, resumeAfterHold: false, urls: {}, tags: {}, tagOrder: [], art: { id: '', url: '' },
+        awake: null, savedAt: 0, lastSec: -1, can: {}, persistTimer: null
+    };
+    var musNames = H.get('musNames', null) || {};    // { id: { t, a, b } } title, artist, album from the tags
+    var musDurs = H.get('musDurs', null) || {};      // { id: seconds }
+    var musSaved = H.get('musState', null);          // the last queue and position, for Resume
+
+    // ---------------------------------------------------- Home Assistant's media folder
+
+    function musBrowse(id) {
+        return new Promise(function (ok, bad) {
+            if (!ha.connected) { bad(new Error('Home Assistant is not connected')); return; }
+            haSend('media_source/browse_media', { media_content_id: id }, function (s, res, err) {
+                if (s && res) { ok(res); } else { bad(new Error((err && err.message) || 'no answer')); }
+            });
+        });
+    }
+
+    // A signed link Home Assistant serves the file on (the TV's <audio> can't send the token).
+    function musResolve(id) {
+        var c = mus.urls[id];
+        if (c && Date.now() - c.at < 20 * 3600000) { return Promise.resolve(c.url); }
+        return new Promise(function (ok, bad) {
+            if (!ha.connected) { bad(new Error('Home Assistant is not connected')); return; }
+            haSend('media_source/resolve_media', { media_content_id: id }, function (s, res, err) {
+                if (!s || !res || !res.url) { bad(new Error((err && err.message) || 'no link for this file')); return; }
+                var url = /^https?:/i.test(res.url) ? res.url : H.ha().url + res.url;
+                mus.urls[id] = { url: url, at: Date.now() };
+                ok(url);
+            });
+        });
+    }
+
+    function musCanPlay(mime) {
+        if (!mime) { return false; }
+        if (!mus.can.hasOwnProperty(mime)) {
+            try { mus.can[mime] = !!$('musAudio').canPlayType(mime); } catch (e) { mus.can[mime] = false; }
+        }
+        return mus.can[mime];
+    }
+
+    function musFormats() {
+        var out = [];
+        each(MUS_FORMATS, function (f) { out.push(f[0] + (musCanPlay(f[1]) ? ' yes' : ' no')); });
+        return out.join(', ');
+    }
+
+    // The top folders of My media: Settings > Music folder lists them, and "Automatic" picks Music.
+    function musLoadDirs() {
+        return musBrowse(MUS_ROOT).then(function (res) {
+            var dirs = [], auto = null;
+            each(res.children || [], function (c) { if (c.can_expand) { dirs.push([c.media_content_id, c.title]); } });
+            each(dirs, function (d) { if (!auto && /^music$/i.test(d[1])) { auto = d; } });
+            mus.dirs = dirs;
+            mus.autoRoot = auto ? auto[0] : MUS_ROOT;
+            mus.autoTitle = auto ? auto[1] : 'My media';
+            musDirOptions();
+            if (mode === 'settings') { renderSettings(); }
+        });
+    }
+
+    function musDirOptions() {
+        var o = [['', 'Automatic (' + (mus.dirs ? mus.autoTitle : 'a folder named Music') + ')']], have = {};
+        if (mus.dirs) {
+            o.push([MUS_ROOT, 'All of My media']);
+            each(mus.dirs, function (d) { o.push([d[0], d[1]]); have[d[0]] = true; });
+        }
+        if (cfg.musDir && cfg.musDir !== MUS_ROOT && !have[cfg.musDir]) { o.push([cfg.musDir, cfg.musDirName || 'the saved folder']); }
+        if (cfg.musDir === MUS_ROOT && !mus.dirs) { o.push([MUS_ROOT, 'All of My media']); }
+        each(SETTINGS_DEF, function (def) { if (def.key === 'musDir') { def.options = o; } });
+    }
+
+    function musRootId() { return cfg.musDir || mus.autoRoot || MUS_ROOT; }
+    function musRootTitle() {
+        var id = musRootId();
+        if (id === MUS_ROOT) { return 'My media'; }
+        return cfg.musDir ? (cfg.musDirName || 'Music') : (mus.autoTitle || 'Music');
+    }
+
+    function musFolderChanged() {
+        mus.gen++;
+        mus.loading = false;
+        mus.path = [];
+        mus.items = [];
+        mus.playable = [];
+        mus.loadedAt = 0;
+        mus.error = '';
+        mus.f = null;
+        mus.scrollY = 0;
+        if (pos(P_MUS) >= 0) { musLoad(true); }
+    }
+
+    // Natural order, ignoring case: "2 Song" before "10 Song".
+    function musSortKey(s) {
+        return String(s || '').toLowerCase().replace(/\d+/g, function (n) { return ('0000000000' + n).slice(-10); });
+    }
+
+    function musLoad(force) {
+        if (mus.loading) { return; }
+        if (!force && mus.loadedAt && Date.now() - mus.loadedAt < 120000) { return; }
+        if (!H.ha().token || !ha.connected) { musRender(); return; }
+        mus.loading = true;
+        var gen = ++mus.gen;
+        if (!mus.loadedAt) { musRender(); }
+        (mus.dirs ? Promise.resolve() : musLoadDirs()).then(function () {
+            if (gen !== mus.gen) { return null; }
+            if (!mus.path.length) { mus.path = [{ id: musRootId(), title: musRootTitle() }]; }
+            return musBrowse(mus.path[mus.path.length - 1].id);
+        }).then(function (res) {
+            if (gen !== mus.gen || !res) { return; }
+            mus.loading = false;
+            mus.error = '';
+            mus.loadedAt = Date.now();
+            musSetItems(res);
+            var arrived = page === P_MUS && String(sel[P_MUS] || '').indexOf('edge:') === 0 && !selBeforeEdge[P_MUS];
+            if (arrived) { sel[P_MUS] = 'mus'; }
+            if (page === P_MUS) { unpark(); }
+            musRender();
+            if (arrived || page === P_MUS) { applyFocus(); }
+        }, function (e) {
+            if (gen !== mus.gen) { return; }
+            mus.loading = false;
+            if (mus.path.length > 1) {          // a folder that went away: back to the music folder
+                mus.path = mus.path.slice(0, 1);
+                musLoad(true);
+                return;
+            }
+            mus.loadedAt = 0;
+            mus.items = [];
+            mus.playable = [];
+            mus.error = 'Couldn\'t open ' + musRootTitle() + ' on Home Assistant (' + e.message + '). Put your songs in /media/Music, ' +
+                'or pick another folder in Settings > Music folder.';
+            musRender();
+        });
+    }
+
+    function musSetItems(res) {
+        var dirs = [], tracks = [], art = '', here = res.media_content_id;
+        each(res.children || [], function (c) {
+            if (c.can_expand) {
+                dirs.push({ kind: 'dir', id: c.media_content_id, file: c.title });
+            } else if (c.can_play && (c.media_class === 'music' || /^audio\//i.test(c.media_content_type || ''))) {
+                tracks.push({ kind: 'track', id: c.media_content_id, file: c.title, mime: c.media_content_type || '', dir: here });
+            } else if (!art && c.media_class === 'image' && MUS_ART.test(c.title || '')) {
+                art = c.media_content_id;
+            }
+        });
+        function byName(a, b) { var x = musSortKey(a.file), y = musSortKey(b.file); return x < y ? -1 : x > y ? 1 : 0; }
+        dirs.sort(byName);
+        tracks.sort(byName);
+        var playable = [];
+        each(tracks, function (t) { t.ok = musCanPlay(t.mime); if (t.ok) { playable.push(t); } });
+        if (art) { mus.dirArt[here] = art; } else { delete mus.dirArt[here]; }
+        mus.items = dirs.concat(tracks);
+        mus.playable = playable;
+        if (mus.cameFrom) {
+            each(mus.items, function (it, i) { if (it.id === mus.cameFrom) { mus.f = { z: 'item', i: i, c: 0 }; } });
+            mus.cameFrom = '';
+        }
+        musFix();
+    }
+
+    // ---------------------------------------------------- names
+
+    // "03 - Artist - Song Title.mp3" -> { title: "Song Title", artist: "Artist" }. A number is a track
+    // number only with a separator after it or a leading zero, so "12 Days of Christmas" stays whole.
+    function musParseName(file) {
+        var s = String(file || '').replace(/\.[a-z0-9]{2,5}$/i, '').replace(/_/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+        var m = /^(?:\d{1,3}\s*[-.)]\s*|0\d\s+)(.+)$/.exec(s);
+        if (m) { s = m[1]; }
+        var parts = s.split(' - ');
+        if (parts.length > 1 && parts[0] && parts.slice(1).join(' - ')) {
+            return { title: parts.slice(1).join(' - '), artist: parts[0] };
+        }
+        return { title: s || String(file || ''), artist: '' };
+    }
+
+    function musInfo(t) {
+        var g = musNames[t.id], p = musParseName(t.file);
+        return { title: (g && g.t) || p.title, artist: (g && g.a) || p.artist, album: (g && g.b) || '' };
+    }
+
+    function musClock(s) {
+        s = Math.max(0, Math.floor(s || 0));
+        var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+        return (h ? h + ':' + pad(m) : m) + ':' + pad(s % 60);
+    }
+
+    // Names and lengths are kept on the TV, at most MUS_KEEP of each.
+    function musPersistSoon() {
+        if (mus.persistTimer) { return; }
+        mus.persistTimer = setTimeout(function () {
+            mus.persistTimer = null;
+            each([musNames, musDurs], function (o) {
+                var k = keys(o);
+                for (var i = 0; i < k.length - MUS_KEEP; i++) { delete o[k[i]]; }
+            });
+            H.set('musNames', musNames);
+            H.set('musDurs', musDurs);
+        }, 5000);
+    }
+
+    // ---------------------------------------------------- MP3 tags (ID3v2.2 to 2.4)
+    //
+    // Only the start of the file is fetched, with a Range request: 64 KB first, then the whole tag
+    // if a large cover picture doesn't fit (up to 3 MB). Anything unexpected means "no tags".
+
+    function musRange(url, from, to) {
+        return new Promise(function (ok, bad) {
+            var x = new XMLHttpRequest();
+            try {
+                x.open('GET', url, true);
+                x.responseType = 'arraybuffer';
+                x.timeout = 10000;
+                x.setRequestHeader('Range', 'bytes=' + from + '-' + to);
+                x.onload = function () {
+                    if ((x.status === 206 || x.status === 200) && x.response) { ok(new Uint8Array(x.response)); }
+                    else { bad(new Error('HTTP ' + x.status)); }
+                };
+                x.onerror = function () { bad(new Error('not reachable')); };
+                x.ontimeout = function () { bad(new Error('timed out')); };
+                x.send();
+            } catch (e) {
+                bad(e);
+            }
+        });
+    }
+
+    function musSyncsafe(b, i) { return ((b[i] & 0x7f) << 21) | ((b[i + 1] & 0x7f) << 14) | ((b[i + 2] & 0x7f) << 7) | (b[i + 3] & 0x7f); }
+    function musBe32(b, i) { return ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3]; }
+
+    // Bytes the tag takes at the start of the file, header included; 0 without one.
+    function musId3Size(b) {
+        if (b.length < 10 || b[0] !== 0x49 || b[1] !== 0x44 || b[2] !== 0x33 || b[3] < 2 || b[3] > 4) { return 0; }
+        return 10 + musSyncsafe(b, 6) + (b[5] & 0x10 ? 10 : 0);
+    }
+
+    function musUnsync(b) {                 // 0xFF 0x00 was written for every 0xFF
+        var out = new Uint8Array(b.length), n = 0, i;
+        for (i = 0; i < b.length; i++) { out[n++] = b[i]; if (b[i] === 0xff && b[i + 1] === 0x00) { i++; } }
+        return out.subarray(0, n);
+    }
+
+    function musLatin1(b) {
+        var s = '', i;
+        for (i = 0; i < b.length; i++) { s += String.fromCharCode(b[i]); }
+        return s;
+    }
+
+    // ID3 text: 0 = ISO-8859-1, 1 = UTF-16 with BOM, 2 = UTF-16BE, 3 = UTF-8. The first value only.
+    function musDecode(b, enc) {
+        var s = '', i, le = false;
+        if (enc === 1 || enc === 2) {
+            i = 0;
+            if (enc === 1 && b.length > 1) {
+                if (b[0] === 0xff && b[1] === 0xfe) { le = true; i = 2; } else if (b[0] === 0xfe && b[1] === 0xff) { i = 2; }
+            }
+            for (; i + 1 < b.length; i += 2) {
+                var c = le ? b[i] | (b[i + 1] << 8) : (b[i] << 8) | b[i + 1];
+                if (!c) { break; }
+                s += String.fromCharCode(c);
+            }
+        } else {
+            var end = 0;
+            while (end < b.length && b[end]) { end++; }
+            s = musLatin1(b.subarray(0, end));
+            if (enc === 3) { try { s = decodeURIComponent(escape(s)); } catch (e) { /* not valid UTF-8: keep the bytes */ } }
+        }
+        return s.replace(/^\s+|\s+$/g, '');
+    }
+
+    function musFrame(id, d, out) {
+        var key = { TIT2: 't', TT2: 't', TPE1: 'a', TP1: 'a', TPE2: 'aa', TP2: 'aa', TALB: 'b', TAL: 'b' }[id];
+        if (key) {
+            if (!out[key] && d.length > 1) { out[key] = musDecode(d.subarray(1), d[0]); }
+            return;
+        }
+        if ((id !== 'APIC' && id !== 'PIC') || d.length < 8) { return; }
+        var enc = d[0], p = 1, mime, q;
+        if (id === 'PIC') {
+            mime = musLatin1(d.subarray(1, 4)).toLowerCase();
+            p = 4;
+        } else {
+            q = 1;
+            while (q < d.length && d[q]) { q++; }
+            mime = musLatin1(d.subarray(1, q)).toLowerCase();
+            p = q + 1;
+        }
+        if (mime.indexOf('/') < 0) { mime = 'image/' + mime; }
+        mime = mime.replace('/jpg', '/jpeg');
+        var type = d[p];
+        p++;
+        q = p;
+        if (enc === 1 || enc === 2) { while (q + 1 < d.length && (d[q] || d[q + 1])) { q += 2; } q += 2; }
+        else { while (q < d.length && d[q]) { q++; } q++; }
+        if (q >= d.length || !/^image\/(jpeg|png|gif|webp|bmp)$/.test(mime)) { return; }
+        if (out.pic && (out.pic.type === 3 || type !== 3)) { return; }      // the front cover wins
+        out.pic = { mime: mime, type: type, data: d.subarray(q) };
+    }
+
+    function musId3(all) {
+        var size = musId3Size(all);
+        if (!size) { return null; }
+        var ver = all[3], flags = all[5], b = all.subarray(10, Math.min(all.length, size)), i = 0, out = {};
+        if (ver < 4 && (flags & 0x80)) { b = musUnsync(b); }
+        if (ver > 2 && (flags & 0x40) && b.length > 4) { i = ver === 3 ? 4 + musBe32(b, 0) : musSyncsafe(b, 0); }
+        var idLen = ver === 2 ? 3 : 4, hdr = ver === 2 ? 6 : 10;
+        while (i + hdr <= b.length) {
+            var id = musLatin1(b.subarray(i, i + idLen));
+            if (!/^[A-Z0-9]+$/.test(id)) { break; }                      // padding
+            var len = ver === 2 ? (b[i + 3] << 16) | (b[i + 4] << 8) | b[i + 5] : ver === 4 ? musSyncsafe(b, i + 4) : musBe32(b, i + 4);
+            var ff = ver === 2 ? 0 : b[i + 9], start = i + hdr, end = start + len;
+            if (end > b.length) { break; }                               // cut off: the rest wasn't fetched
+            var d = b.subarray(start, end);
+            var skip = ver === 3 ? (ff & 0xc0) : ver === 4 ? (ff & 0x0c) : 0;   // compressed or encrypted
+            if (ver === 4 && (ff & 0x40)) { d = d.subarray(1); }               // group byte
+            if (ver === 4 && (ff & 0x01)) { d = d.subarray(4); }               // data length
+            if (ver === 4 && (ff & 0x02)) { d = musUnsync(d); }
+            if (!skip && d.length) { musFrame(id, d, out); }
+            i = end;
+        }
+        if (!out.a && out.aa) { out.a = out.aa; }
+        delete out.aa;
+        return out;
+    }
+
+    // Tags for a song: its names are kept for the list, its cover becomes a blob URL. At most 6
+    // covers are held; older ones are let go.
+    function musTags(t) {
+        if (!t || mus.tags[t.id]) { return; }
+        mus.tags[t.id] = { art: '', done: false };
+        mus.tagOrder.push(t.id);
+        while (mus.tagOrder.length > 6) {
+            var old = mus.tagOrder.shift(), cur = musCur();
+            if (cur && cur.id === old) { mus.tagOrder.push(old); break; }
+            if (mus.tags[old] && mus.tags[old].art) { try { URL.revokeObjectURL(mus.tags[old].art); } catch (e) { /* gone */ } }
+            delete mus.tags[old];
+        }
+        function done(tag) {
+            var slot = mus.tags[t.id];
+            if (!slot) { return; }
+            slot.done = true;
+            if (tag && (tag.t || tag.a || tag.b)) {
+                musNames[t.id] = { t: tag.t || '', a: tag.a || '', b: tag.b || '' };
+                musPersistSoon();
+            }
+            if (tag && tag.pic) {
+                try { slot.art = URL.createObjectURL(new Blob([tag.pic.data], { type: tag.pic.mime })); } catch (e) { slot.art = ''; }
+            }
+            var c = musCur();
+            if (c && c.id === t.id) { musArt(); musRenderNow(); musMini(); }
+            musRenderList();
+        }
+        if (!/mpeg|mp3/i.test(t.mime || '')) { done(null); return; }
+        musResolve(t.id).then(function (url) {
+            return musRange(url, 0, 65535).then(function (b) {
+                var need = musId3Size(b);
+                if (!need || need <= b.length || need > 3 * 1048576) { return b; }
+                return musRange(url, 0, need - 1).then(null, function () { return b; });
+            });
+        }).then(function (b) { done(musId3(b)); }, function () { done(null); });
+    }
+
+    // The card's picture: the song's own cover, else cover.jpg / folder.jpg in its folder.
+    function musArt() {
+        var t = musCur(), want = '', tag = t && mus.tags[t.id];
+        if (tag && tag.art) { want = tag.art; }
+        if (want || !t || !mus.dirArt[t.dir]) { musShowArt(t ? t.id : '', want); return; }
+        if (tag && !tag.done) { return; }                          // the song's own cover may still come
+        musResolve(mus.dirArt[t.dir]).then(function (url) {
+            var c = musCur();
+            if (c && c.id === t.id && !(mus.tags[t.id] && mus.tags[t.id].art)) { musShowArt(t.id, url); }
+        }, function () { /* no picture */ });
+    }
+
+    function musShowArt(id, url) {
+        mus.art = { id: id, url: url };
+        var el = $('musArt');
+        if (!el) { return; }
+        el.style.backgroundImage = url ? 'url("' + url + '")' : '';
+        el.className = url ? 'pic' : '';
+    }
+
+    // ---------------------------------------------------- playing
+
+    function musCur() { return mus.qi >= 0 && mus.qi < mus.order.length ? mus.queue[mus.order[mus.qi]] || null : null; }
+
+    function musShuffled(n, first) {
+        var o = [], i, j, x;
+        for (i = 0; i < n; i++) { if (i !== first) { o.push(i); } }
+        for (i = o.length - 1; i > 0; i--) { j = Math.floor(Math.random() * (i + 1)); x = o[i]; o[i] = o[j]; o[j] = x; }
+        if (first >= 0) { o.unshift(first); }
+        return o;
+    }
+
+    function musLinear(n) { var o = []; for (var i = 0; i < n; i++) { o.push(i); } return o; }
+
+    // start: index in the playable songs of this folder, -1 = any (shuffled) or the first
+    function musPlayFolder(start, shuffle) {
+        if (!mus.playable.length) { return; }
+        if (shuffle !== undefined && cfg.musShuffle !== shuffle) { cfg.musShuffle = shuffle; save('musShuffle'); }
+        mus.queue = mus.playable.slice(0);
+        var n = mus.queue.length;
+        if (cfg.musShuffle) {
+            mus.order = musShuffled(n, start >= 0 ? start : Math.floor(Math.random() * n));
+            mus.qi = 0;
+        } else {
+            mus.order = musLinear(n);
+            mus.qi = Math.max(0, start);
+        }
+        mus.fails = 0;
+        musStart(0);
+    }
+
+    function musStart(at) {
+        var t = musCur(), tok = ++mus.tok, a = $('musAudio');
+        if (!t) { musStop(); return; }
+        mus.active = true;
+        mus.held = null;
+        mus.playing = true;
+        mus.buffering = true;
+        mus.pos = at || 0;
+        mus.startAt = at || 0;
+        mus.dur = musDurs[t.id] || 0;
+        mus.lastSec = -1;
+        musAwake(true);
+        musShowArt(t.id, '');
+        musTags(t);
+        musArt();
+        musRenderNow();
+        musRenderList();
+        musMini();
+        musSave();
+        musResolve(t.id).then(function (url) {
+            if (tok !== mus.tok) { return; }
+            a.src = url;
+            musPlayEl();
+        }, function (e) {
+            if (tok === mus.tok) { musFail(e.message); }
+        });
+    }
+
+    function musPlayEl() {
+        var a = $('musAudio'), tok = mus.tok, p;
+        try { p = a.play(); } catch (e) { musFail(e.message || String(e)); return; }
+        if (p && p.then) {
+            p.then(null, function (e) {
+                if (tok !== mus.tok || (e && e.name === 'AbortError')) { return; }
+                if (e && e.name === 'NotAllowedError') {               // a desktop browser wants a key press first
+                    mus.playing = false;
+                    musAwake(false);
+                    musRenderNow();
+                    musMini();
+                    toast('Press Play to start the music', 4000);
+                    return;
+                }
+                musFail((e && (e.message || e.name)) || 'play refused');
+            });
+        }
+    }
+
+    // Lets go of the file, so the TV's decoder is free for a camera or a film.
+    function musRelease() {
+        var a = $('musAudio');
+        try { a.pause(); } catch (e) { /* not playing */ }
+        if (a.getAttribute('src')) {
+            a.removeAttribute('src');
+            try { a.load(); } catch (e) { /* nothing loaded */ }
+        }
+    }
+
+    function musToggle() {
+        if (!mus.active) { musResume(); return; }
+        if (mus.held && mus.held !== 'hidden') { return; }
+        if (mus.held) { mus.held = null; }
+        var a = $('musAudio');
+        if (mus.playing) {
+            mus.pos = a.currentTime || mus.pos;
+            try { a.pause(); } catch (e) { /* already */ }
+            mus.playing = false;
+            musAwake(false);
+            musSave();
+        } else if (a.getAttribute('src')) {
+            mus.playing = true;
+            musAwake(true);
+            musPlayEl();
+        } else {
+            musStart(mus.pos);
+            return;
+        }
+        musRenderNow();
+        musRenderList();
+        musMini();
+    }
+
+    // manual: Next on the remote or the card, which wraps even with Repeat off
+    function musNext(manual) {
+        if (!mus.active) { return; }
+        var n = mus.order.length;
+        if (mus.qi < n - 1) {
+            mus.qi++;
+        } else if (cfg.musRepeat === 'off' && !manual) {
+            mus.qi = 0;                              // the end: back to the first song, waiting
+            mus.pos = 0;
+            mus.tok++;
+            musRelease();
+            mus.playing = false;
+            musAwake(false);
+            musSave();
+            musRenderNow();
+            musRenderList();
+            musMini();
+            return;
+        } else {
+            if (cfg.musShuffle && n > 2) {           // a new order for the next round, not starting with the song just heard
+                var last = mus.order[mus.qi];
+                do { mus.order = musShuffled(n, -1); } while (mus.order[0] === last);
+            }
+            mus.qi = 0;
+        }
+        musStart(0);
+    }
+
+    function musPrev() {
+        if (!mus.active) { return; }
+        var a = $('musAudio');
+        if ((a.currentTime || mus.pos) > 4 && a.getAttribute('src')) {
+            try { a.currentTime = 0; } catch (e) { /* not seekable */ }
+            mus.pos = 0;
+            if (!mus.playing) { musToggle(); }
+            return;
+        }
+        mus.qi = mus.qi > 0 ? mus.qi - 1 : mus.order.length - 1;
+        musStart(0);
+    }
+
+    function musEnded() {
+        if (cfg.musRepeat === 'one') { musStart(0); } else { musNext(false); }
+    }
+
+    // Stop ends the session; Resume (or Play on the remote) picks it up again.
+    function musStop() {
+        if (mus.active) { mus.pos = $('musAudio').currentTime || mus.pos; musSave(); }
+        mus.tok++;
+        musRelease();
+        mus.active = false;
+        mus.playing = false;
+        mus.buffering = false;
+        mus.held = null;
+        musAwake(false);
+        musShowArt('', '');
+        musFix();
+        musRenderNow();
+        musRenderList();
+        musMini();
+        applyFocus();
+    }
+
+    function musFail(msg) {
+        var t = musCur(), title = t ? musInfo(t).title : 'this song';
+        H.set('musLast', { at: Date.now(), title: title, error: msg });
+        mus.fails++;
+        if (mus.fails >= mus.order.length) {
+            musStop();
+            toast('The music stopped: ' + title + ' wouldn\'t play (' + msg + ')', 7000);
+            return;
+        }
+        toast('Skipped ' + title + ': ' + msg, 5000);
+        musNext(true);
+    }
+
+    function musSetShuffle(on) {
+        cfg.musShuffle = on;
+        save('musShuffle');
+        if (mus.active && mus.order.length > 1) {
+            var cur = mus.order[mus.qi];
+            if (on) { mus.order = musShuffled(mus.order.length, cur); mus.qi = 0; }
+            else { mus.order = musLinear(mus.queue.length); mus.qi = cur; }
+            musSave();
+        }
+        musRenderNow();
+    }
+
+    function musCycleRepeat() {
+        var o = ['all', 'one', 'off'];
+        cfg.musRepeat = o[(o.indexOf(cfg.musRepeat) + 1) % o.length];
+        save('musRepeat');
+        musRenderNow();
+    }
+
+    // A camera, a film or leaving Haven: the file is let go and the spot remembered.
+    function musHold(reason) {
+        if (!mus.active) { return; }
+        if (!mus.held) { mus.resumeAfterHold = mus.playing; }
+        mus.held = reason;
+        var a = $('musAudio');
+        if (a.getAttribute('src')) { mus.pos = a.currentTime || mus.pos; }
+        mus.tok++;
+        musRelease();
+        mus.playing = false;
+        mus.buffering = false;
+        musAwake(false);
+        musSave();
+        musRenderNow();
+        musRenderList();
+        musMini();
+    }
+
+    // play: carry on if it was playing (after a camera or a film); after leaving Haven it waits for Play.
+    function musUnhold(reason, play) {
+        if (!mus.active || mus.held !== reason) { return; }
+        if (play && mus.resumeAfterHold) { musStart(mus.pos); return; }
+        mus.held = null;
+        musRenderNow();
+        musMini();
+    }
+
+    // The shell applies a downloaded design update after 20 s without a key press, which would cut
+    // the music off. While it plays, Haven tells the shell it's in use, as during a film.
+    function musAwake(on) {
+        clearInterval(mus.awake);
+        mus.awake = null;
+        if (!on) { return; }
+        mus.awake = setInterval(function () {
+            try {
+                var ev = document.createEvent('Event');
+                ev.initEvent('keydown', true, true);
+                document.dispatchEvent(ev);
+            } catch (e) { /* nothing to do */ }
+        }, 10000);
+    }
+
+    function musSave() {
+        var t = musCur();
+        if (!t) { return; }
+        var q = mus.queue, order = mus.order, qi = mus.qi;
+        if (q.length > MUS_KEEP) {                   // a very long queue: the songs from here on
+            q = [];
+            for (var i = qi; i < order.length && q.length < MUS_KEEP; i++) { q.push(mus.queue[order[i]]); }
+            order = musLinear(q.length);
+            qi = 0;
+        }
+        var inf = musInfo(t), list = [];
+        each(q, function (s) { list.push({ id: s.id, file: s.file, mime: s.mime, dir: s.dir }); });
+        musSaved = { at: Date.now(), queue: list, order: order, qi: qi, pos: Math.floor(mus.pos || 0), title: inf.title, artist: inf.artist };
+        mus.savedAt = Date.now();
+        H.set('musState', musSaved);
+    }
+
+    function musResume() {
+        var s = musSaved;
+        if (!s || !s.queue || !s.queue.length) { return; }
+        mus.queue = [];
+        each(s.queue, function (t) { mus.queue.push({ kind: 'track', id: t.id, file: t.file, mime: t.mime, dir: t.dir, ok: musCanPlay(t.mime) }); });
+        var n = mus.queue.length;
+        mus.order = s.order && s.order.length === n ? s.order.slice(0) : musLinear(n);
+        mus.qi = s.qi >= 0 && s.qi < n ? s.qi : 0;
+        mus.fails = 0;
+        musStart(s.pos || 0);
+        applyFocus();
+    }
+
+    function musTick() {
+        var a = $('musAudio');
+        if (mus.held || !a.getAttribute('src')) { return; }
+        mus.pos = a.currentTime || 0;
+        var sec = Math.floor(mus.pos);
+        if (sec === mus.lastSec) { return; }
+        mus.lastSec = sec;
+        var pct = mus.dur > 0 ? Math.min(100, mus.pos / mus.dur * 100) : 0;
+        var fill = $('musFill');
+        if (fill) { fill.style.width = pct + '%'; }
+        var p = $('musPos');
+        if (p) { p.textContent = musClock(mus.pos); }
+        $('musMiniFill').style.width = pct + '%';
+        if (mus.playing && Date.now() - mus.savedAt > 15000) { musSave(); }
+    }
+
+    function musInit() {
+        var a = $('musAudio');
+        a.preload = 'auto';
+        a.addEventListener('loadedmetadata', function () {
+            var t = musCur();
+            if (mus.startAt > 1) { try { a.currentTime = mus.startAt; } catch (e) { /* from the start */ } }
+            mus.startAt = 0;
+            if (t && isFinite(a.duration) && a.duration > 0) {
+                mus.dur = a.duration;
+                if (musDurs[t.id] !== Math.round(a.duration)) { musDurs[t.id] = Math.round(a.duration); musPersistSoon(); }
+                var d = $('musDur');
+                if (d) { d.textContent = musClock(mus.dur); }
+            }
+        });
+        a.addEventListener('playing', function () {
+            if (!a.getAttribute('src')) { return; }
+            mus.buffering = false;
+            mus.fails = 0;
+            musRenderNow();
+            var n = mus.qi + 1 < mus.order.length ? mus.queue[mus.order[mus.qi + 1]] : null;
+            if (n) { musResolve(n.id).then(function () { musTags(n); }, function () { /* tried again when it's on */ }); }
+        });
+        a.addEventListener('waiting', function () {
+            if (!a.getAttribute('src') || mus.buffering) { return; }
+            mus.buffering = true;
+            musRenderNow();
+        });
+        a.addEventListener('timeupdate', musTick);
+        a.addEventListener('ended', function () { if (a.getAttribute('src')) { musEnded(); } });
+        a.addEventListener('error', function () {
+            if (!a.getAttribute('src') || !mus.active || mus.held) { return; }
+            var code = a.error ? a.error.code : 0;
+            musFail(code === 4 ? 'the file is missing, or this TV can\'t play it' : code === 2 ? 'network error' : code === 3 ? 'the file is damaged' : 'player error ' + code);
+        });
+        musDirOptions();
+        musMini();
+    }
+
+    // ---------------------------------------------------- remote
+
+    // Media keys on every page (not in the film or camera player, which use their own).
+    function musMediaKey(k) {
+        var pp = k === KEY.PLAYPAUSE || (k === KEY.SPACE && !H.isTV);
+        if (!(pp || k === KEY.PLAY || k === KEY.PAUSE || k === KEY.STOP || k === KEY.FF || k === KEY.RW)) { return false; }
+        if (!mus.active) {
+            if ((pp || k === KEY.PLAY) && musSaved && screenOn(P_MUS)) { musResume(); return true; }
+            return false;
+        }
+        if (pp) { musToggle(); }
+        else if (k === KEY.PLAY) { if (!mus.playing) { musToggle(); } }
+        else if (k === KEY.PAUSE) { if (mus.playing) { musToggle(); } }
+        else if (k === KEY.STOP) { musStop(); }
+        else if (k === KEY.FF) { musNext(true); }
+        else if (k === KEY.RW) { musPrev(); }
+        return true;
+    }
+
+    // Focus on the page: the card's buttons ('ctl'), Play all / Shuffle ('act'), or a row of the list ('item').
+    function musCtl() {
+        if (mus.active) { return ['prev', 'pp', 'next', 'shuffle', 'repeat']; }
+        return musSaved && musSaved.queue && musSaved.queue.length ? ['resume'] : [];
+    }
+
+    function musZones() {
+        var z = [];
+        if (musCtl().length) { z.push('ctl'); }
+        if (mus.playable.length) { z.push('act'); }
+        return z;
+    }
+
+    function musHasFocus() { return musZones().length > 0 || mus.items.length > 0; }
+
+    function musFix() {
+        var zones = musZones(), f = mus.f;
+        if (!f) {      // arriving: Play / Pause, else Resume, else Play all, else the first row
+            f = mus.f = { z: zones.length ? zones[0] : 'item', i: 0, c: mus.active ? 1 : 0 };
+        }
+        if (f.z === 'item' && !mus.items.length) { f.z = zones[zones.length - 1] || 'item'; }
+        if (f.z !== 'item' && zones.indexOf(f.z) < 0) { f.z = mus.items.length ? 'item' : zones[0] || 'item'; }
+        f.i = Math.max(0, Math.min(f.i, mus.items.length - 1));
+        var n = f.z === 'ctl' ? musCtl().length : f.z === 'act' ? 2 : 1;
+        f.c = Math.max(0, Math.min(f.c, n - 1));
+    }
+
+    function musMoveV(dir) {
+        var zones = musZones(), f = mus.f;
+        if (f.z === 'item') {
+            if (dir > 0) { if (f.i < mus.items.length - 1) { f.i++; } }
+            else if (f.i > 0) { f.i--; }
+            else if (zones.length) { f.z = zones[zones.length - 1]; f.c = f.z === 'ctl' && mus.active ? 1 : 0; }
+            else { toTabs(); return; }
+        } else {
+            var at = zones.indexOf(f.z) + dir;
+            if (at < 0) { toTabs(); return; }
+            if (at >= zones.length) {
+                if (!mus.items.length) { return; }
+                f.z = 'item';
+            } else {
+                f.z = zones[at];
+                f.c = f.z === 'ctl' && mus.active ? 1 : 0;
+            }
+        }
+        musScroll();
+        applyFocus();
+    }
+
+    function musMoveH(dir) {
+        var f = mus.f, n = f.z === 'ctl' ? musCtl().length : f.z === 'act' ? 2 : 0;
+        if (f.z === 'item' || (dir < 0 && f.c === 0) || (dir > 0 && f.c >= n - 1)) { toEdge(dir < 0 ? 'l' : 'r'); return; }
+        f.c += dir;
+        applyFocus();
+    }
+
+    function musOk() {
+        var f = mus.f;
+        if (f.z === 'ctl') {
+            var b = musCtl()[f.c];
+            if (b === 'prev') { musPrev(); }
+            else if (b === 'pp') { musToggle(); }
+            else if (b === 'next') { musNext(true); }
+            else if (b === 'shuffle') { musSetShuffle(!cfg.musShuffle); }
+            else if (b === 'repeat') { musCycleRepeat(); }
+            else if (b === 'resume') { musResume(); f.c = 1; }
+        } else if (f.z === 'act') {
+            musPlayFolder(-1, f.c === 1);            // Play all: in order; Shuffle all: shuffled
+            f.z = 'ctl';                             // the card's buttons come next
+            f.c = 1;
+        } else {
+            var it = mus.items[f.i];
+            if (!it) { return; }
+            if (it.kind === 'dir') { musOpen(it); return; }
+            if (!it.ok) { toast('This TV can\'t play ' + (it.mime || 'this kind of file') + ' files.', 4000); return; }
+            musPlayFolder(mus.playable.indexOf(it));
+        }
+        musFix();
+        applyFocus();
+    }
+
+    function musOpen(dir) {
+        mus.path.push({ id: dir.id, title: dir.file });
+        mus.f = { z: 'item', i: 0, c: 0 };
+        mus.scrollY = 0;
+        mus.gen++;
+        mus.loading = false;
+        mus.items = [];
+        mus.playable = [];
+        mus.loadedAt = 0;
+        musLoad(true);
+    }
+
+    // Back in a folder: up one level, with the focus on the folder you were in.
+    function musUp() {
+        var from = mus.path.pop();
+        mus.gen++;
+        mus.loading = false;
+        mus.loadedAt = 0;
+        mus.items = [];
+        mus.playable = [];
+        mus.f = { z: 'item', i: 0, c: 0 };
+        mus.cameFrom = from ? from.id : '';
+        mus.scrollY = 0;
+        musLoad(true);
+    }
+
+    function onMusKey(k) {
+        if (!musHasFocus()) {
+            if (k === KEY.LEFT) { toEdge('l'); return true; }
+            if (k === KEY.RIGHT) { toEdge('r'); return true; }
+            if (k === KEY.UP) { toTabs(); return true; }
+            if (isBack(k)) { if (mus.path.length > 1) { musUp(); } else { showPage(startPage()); } return true; }
+            return k === KEY.DOWN || k === KEY.ENTER;
+        }
+        musFix();
+        var f = mus.f;
+        if (k === KEY.UP) { musMoveV(-1); }
+        else if (k === KEY.DOWN) { musMoveV(1); }
+        else if (k === KEY.LEFT) { musMoveH(-1); }
+        else if (k === KEY.RIGHT) { musMoveH(1); }
+        else if (k === KEY.ENTER) { musOk(); }
+        else if (k === KEY.CH_UP || k === KEY.PAGE_UP || k === KEY.CH_DOWN || k === KEY.PAGE_DOWN) {
+            if (!mus.items.length) { return true; }
+            var dir = k === KEY.CH_UP || k === KEY.PAGE_UP ? 1 : -1;
+            if (f.z !== 'item') { if (dir > 0) { f.z = 'item'; f.i = 0; } }
+            else { f.i = Math.max(0, Math.min(mus.items.length - 1, f.i + dir * MUS_PAGE_ROWS)); }
+            musScroll();
+            applyFocus();
+        } else if (isBack(k)) {
+            if (mus.path.length > 1) { musUp(); } else { showPage(startPage()); }
+        } else { return false; }
+        return true;
+    }
+
+    // ---------------------------------------------------- on screen
+
+    function musRender() {
+        var area = $('musArea');
+        if (!area) { return; }
+        var msg = '';
+        if (!H.ha().token) { msg = 'Add a long-lived access token to shell-config.js (see the README) to play music from Home Assistant.'; }
+        else if (!ha.connected && !mus.loadedAt) { msg = ha.authFailed ? 'Home Assistant rejected the token.' : 'Connecting to Home Assistant...'; }
+        else if (mus.error) { msg = mus.error; }
+        else if (!mus.loadedAt) { msg = 'Loading your music...'; }
+        else if (!mus.items.length) {
+            msg = 'No songs in ' + (mus.path.length ? mus.path[mus.path.length - 1].title : musRootTitle()) + ' yet. Copy MP3s to the media folder on Home Assistant ' +
+                '(/media/Music, the "media" folder on the Samba share).';
+        }
+        area.innerHTML =
+            '<div id="musNow"><div id="musArt">' + MUS_ICON.note + '</div><div class="minfo">' +
+                '<div class="mkick" id="musKick"></div><div class="mtitle" id="musTitle"></div><div class="msub" id="musSub"></div>' +
+                '<div class="mbar" id="musBar"><b id="musFill"></b></div><div class="mtimes" id="musTimes"><span id="musPos"></span><span id="musDur"></span></div>' +
+                '<div class="mctl" id="musCtl"></div></div></div>' +
+            '<div id="musHead"><h3 id="musPath"></h3><div class="mact" id="musAct"></div></div>' +
+            '<div id="musList"><div id="musTrack"></div></div>' +
+            (msg ? '<div class="empty">' + esc(msg) + '</div>' : '');
+        if (mus.art.url) { musShowArt(mus.art.id, mus.art.url); }
+        musRenderNow();
+        musRenderHead();
+        musScroll();
+    }
+
+    function musFocusOn() { return page === P_MUS && sel[P_MUS] === 'mus' && tabFocus === null && mode === 'dock'; }
+
+    function musBtn(b, focused) {
+        var cls = 'mbtn', inner;
+        if (b === 'prev' || b === 'next') { cls += ' round'; inner = MUS_ICON[b]; }
+        else if (b === 'pp') { cls += ' round big'; inner = mus.playing ? MUS_ICON.pause : MUS_ICON.play; }
+        else if (b === 'shuffle') { cls += ' chip' + (cfg.musShuffle ? ' on' : ''); inner = 'Shuffle'; }
+        else if (b === 'repeat') { cls += ' chip' + (cfg.musRepeat !== 'off' ? ' on' : ''); inner = cfg.musRepeat === 'one' ? 'Repeat one' : cfg.musRepeat === 'all' ? 'Repeat all' : 'Repeat off'; }
+        else { cls += ' chip wide'; inner = MUS_ICON.play + '<span>Resume</span>'; }
+        return '<span class="' + cls + (focused ? ' focused' : '') + '">' + inner + '</span>';
+    }
+
+    function musRenderNow() {
+        var kick = $('musKick');
+        if (!kick) { return; }
+        var t = musCur(), on = musFocusOn() && mus.f && mus.f.z === 'ctl', html = '', title, sub, k;
+        if (mus.active && t) {
+            var inf = musInfo(t);
+            k = mus.held ? MUS_HELD[mus.held] : mus.buffering && mus.playing ? 'Loading...' : mus.playing ? 'Now playing' : 'Paused';
+            title = inf.title;
+            sub = [inf.artist, inf.album].join(' · ').replace(/^ · | · $/g, '');
+            if (mus.order.length > 1) { sub += (sub ? '   ' : '') + (mus.qi + 1) + ' of ' + mus.order.length; }
+        } else if (musSaved && musSaved.queue && musSaved.queue.length) {
+            k = 'Last played';
+            title = musSaved.title || 'Your last song';
+            sub = (musSaved.artist ? musSaved.artist + '   ' : '') + 'Resume where you left off, or pick a song below';
+        } else {
+            k = 'Music';
+            title = 'Nothing playing';
+            sub = mus.playable.length ? 'Pick a song below, or Play all' : '';
+        }
+        kick.textContent = k;
+        $('musTitle').textContent = title;
+        $('musSub').textContent = sub;
+        var live = mus.active && !!t;
+        $('musBar').style.visibility = live ? 'visible' : 'hidden';
+        $('musTimes').style.visibility = live ? 'visible' : 'hidden';
+        if (live) {
+            $('musFill').style.width = (mus.dur > 0 ? Math.min(100, mus.pos / mus.dur * 100) : 0) + '%';
+            $('musPos').textContent = musClock(mus.pos);
+            $('musDur').textContent = mus.dur ? musClock(mus.dur) : '';
+        }
+        each(musCtl(), function (b, i) {
+            if (b === 'shuffle') { html += '<span class="sep"></span>'; }
+            html += musBtn(b, on && mus.f.c === i);
+        });
+        $('musCtl').innerHTML = html;
+        if (!live && !mus.art.url) { musShowArt('', ''); }
+    }
+
+    function musRenderHead() {
+        var p = $('musPath');
+        if (!p) { return; }
+        var names = [];
+        each(mus.path.length ? mus.path : [{ title: musRootTitle() }], function (x) { names.push(esc(x.title)); });
+        var dirs = mus.items.length - mus.items.filter(function (it) { return it.kind === 'track'; }).length, songs = mus.items.length - dirs;
+        var count = [];
+        if (songs) { count.push(songs + (songs === 1 ? ' song' : ' songs')); }
+        if (dirs) { count.push(dirs + (dirs === 1 ? ' folder' : ' folders')); }
+        p.innerHTML = names.join(' <i>&rsaquo;</i> ') + (count.length ? '<span>' + count.join(', ') + '</span>' : '');
+        var on = musFocusOn() && mus.f && mus.f.z === 'act', html = '';
+        if (mus.playable.length) {
+            html = '<span class="mbtn chip wide' + (on && mus.f.c === 0 ? ' focused' : '') + '">' + MUS_ICON.play + '<span>Play all</span></span>' +
+                '<span class="mbtn chip wide' + (on && mus.f.c === 1 ? ' focused' : '') + '">Shuffle all</span>';
+        }
+        $('musAct').innerHTML = html;
+    }
+
+    function musRowHtml(it, i, focused) {
+        var cls = 'mrow' + (focused ? ' focused' : ''), n, t, a, d = '';
+        if (it.kind === 'dir') {
+            cls += ' dir';
+            n = MUS_ICON.folder;
+            t = esc(it.file);
+            a = 'Folder';
+        } else {
+            var cur = musCur(), inf = musInfo(it);
+            if (mus.active && cur && cur.id === it.id) {
+                cls += ' cur';
+                n = '<span class="eq' + (mus.playing && !mus.buffering ? '' : ' still') + '"><i></i><i></i><i></i></span>';
+            } else {
+                n = String(mus.playable.indexOf(it) + 1 || '');
+            }
+            if (!it.ok) { cls += ' no'; n = ''; }
+            t = esc(inf.title);
+            a = it.ok ? esc(inf.artist) : 'This TV can\'t play this file';
+            d = musDurs[it.id] ? musClock(musDurs[it.id]) : '';
+        }
+        return '<div class="' + cls + '" style="top:' + (i * MUS_ROW_H) + 'px"><span class="n">' + n + '</span><span class="t">' + t +
+            '</span><span class="a">' + a + '</span><span class="d">' + d + '</span></div>';
+    }
+
+    // Only the rows near the screen are in the page, so a big folder stays light on the TV.
+    function musRenderList() {
+        var track = $('musTrack');
+        if (!track) { return; }
+        var on = musFocusOn() && mus.f && mus.f.z === 'item';
+        var first = Math.max(0, Math.floor(mus.scrollY / MUS_ROW_H) - 1);
+        var last = Math.min(mus.items.length - 1, Math.ceil((mus.scrollY + MUS_LIST_H) / MUS_ROW_H) + 1), html = '';
+        for (var i = first; i <= last; i++) { html += musRowHtml(mus.items[i], i, on && mus.f.i === i); }
+        track.innerHTML = html;
+        track.style.height = (mus.items.length * MUS_ROW_H) + 'px';
+        track.style.transform = 'translate3d(0,' + (-mus.scrollY) + 'px,0)';
+        var more = mus.items.length * MUS_ROW_H > mus.scrollY + MUS_LIST_H + 4;
+        $('musList').className = (mus.scrollY > 0 ? 'fade-t' : '') + (more ? ' fade-b' : '');
+    }
+
+    function musScroll() {
+        var f = mus.f;
+        if (f && f.z === 'item') {
+            var top = f.i * MUS_ROW_H;
+            if (top < mus.scrollY) { mus.scrollY = top; }
+            else if (top + MUS_ROW_H > mus.scrollY + MUS_LIST_H) { mus.scrollY = top + MUS_ROW_H - MUS_LIST_H; }
+        }
+        mus.scrollY = Math.max(0, Math.min(mus.scrollY, Math.max(0, mus.items.length * MUS_ROW_H - MUS_LIST_H)));
+        musRenderList();
+    }
+
+    function musApplyFocus() {
+        var on = musFocusOn();
+        if (!on && !mus.focusShown) { return; }
+        mus.focusShown = on;
+        if (mus.f) { musFix(); }
+        musRenderNow();
+        musRenderHead();
+        musRenderList();
+    }
+
+    // The small player at the top left, on every page but Music.
+    function musMini() {
+        var el = $('musMini');
+        if (!el) { return; }
+        var t = musCur(), show = mus.active && !!t && page !== P_MUS;
+        el.hidden = !show;
+        if (!show) { return; }
+        var inf = musInfo(t);
+        el.className = mus.playing && !mus.buffering ? '' : 'still';
+        $('musMiniText').textContent = inf.title + (inf.artist ? ' · ' + inf.artist : '');
+        $('musMiniFill').style.width = (mus.dur > 0 ? Math.min(100, mus.pos / mus.dur * 100) : 0) + '%';
+    }
+
+    function musOnConnect() {
+        if (pos(P_MUS) >= 0 && (page === P_MUS || !mus.loadedAt)) { musLoad(true); }
+        else if (!mus.dirs && mode === 'settings') { musLoadDirs().then(null, function () { /* tried again later */ }); }
+    }
+
+    function musStatus() {
+        var parts = [screenOn(P_MUS) ? 'shown' : 'hidden (Settings > Screens)', musRootTitle()];
+        if (mus.loadedAt) { parts.push(mus.playable.length + ' songs here'); }
+        if (mus.error) { parts.push('problem: ' + mus.error); }
+        var t = musCur();
+        if (mus.active && t) { parts.push((mus.playing ? 'playing ' : 'paused at ') + musInfo(t).title); }
+        parts.push('plays ' + musFormats());
+        var l = H.get('musLast', null);
+        if (l && l.error) { parts.push('last problem: ' + l.title + ', ' + l.error + ' (' + hhmm(new Date(l.at)) + ')'); }
+        return parts.join(' · ');
+    }
+
+    // For checking from a browser console or the tests; signed links stay inside.
+    window.HavenMusic = {
+        state: function () {
+            var t = musCur();
+            return { active: mus.active, playing: mus.playing, held: mus.held, buffering: mus.buffering, pos: mus.pos, dur: mus.dur,
+                     song: t ? musInfo(t) : null, index: mus.qi, queue: mus.order.length, shuffle: cfg.musShuffle, repeat: cfg.musRepeat,
+                     folder: mus.path.length ? mus.path[mus.path.length - 1].title : '', items: mus.items.length, playable: mus.playable.length,
+                     error: mus.error, focus: mus.f, art: !!mus.art.url, saved: !!musSaved };
+        },
+        formats: musFormats, parseName: musParseName, id3: musId3, browse: musBrowse, status: musStatus,
+        tags: function (id) { return { names: musNames[id] || null, length: musDurs[id] || 0, cover: !!(mus.tags[id] && mus.tags[id].art) }; }
+    };
+
     // ---------------------------------------------------- brightness
     //
     // CH + / CH - on a dimmable light: 10 % steps, down to 1 %, then off. The tile shows the
@@ -3921,6 +5145,7 @@
 
     function canDim(eid) {
         if (!eid) { return false; }
+        if (runOf(eid)) { toast(runOf(eid).label + 's can\'t be dimmed'); return false; }
         if (!isDimmable(eid)) { toast(displayName(eid) + ' can only be switched on and off'); return false; }
         if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return false; }
         return true;
@@ -3966,8 +5191,36 @@
         });
     }
 
+    // Scenes, scripts and buttons: always run, never switched off. No pretend state: Home Assistant's
+    // own update moves the "Activated" time. While a press is on its way, more presses on the same
+    // tile are ignored; the tile pulses so you see it landed.
+    var runBusy = {}, ranUntil = {};
+
+    function runEid(eid) {
+        var r = runOf(eid), st = ha.states[eid];
+        if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return; }
+        if (!st || st.state === 'unavailable') { toast(displayName(eid) + ' is unavailable'); return; }
+        if (runBusy[eid]) { return; }
+        runBusy[eid] = true;
+        var started = Date.now();
+        ranUntil[eid] = started + 1200;
+        renderControls(!ha.connected);
+        // the press-in goes on this element only, so a redraw when HA answers doesn't play it twice
+        var el = document.querySelector('#ctlTrack .ctl[data-key="eid:' + eid + '"]');
+        if (el) { el.className += ' press'; }
+        setTimeout(function () { renderControls(!ha.connected); }, 1250);
+        haSend('call_service', { domain: domainOf(eid), service: r.service, target: { entity_id: eid } }, function (ok, res, err) {
+            setTimeout(function () { delete runBusy[eid]; }, Math.max(0, 600 - (Date.now() - started)));
+            if (ok) { return; }
+            delete ranUntil[eid];
+            renderControls(!ha.connected);
+            toast('Couldn\'t ' + r.verb + ' ' + displayName(eid) + ': ' + ((err && err.message) || 'error'), 4000);
+        });
+    }
+
     function toggleEid(eid) {
         if (!eid) { return; }
+        if (runOf(eid)) { runEid(eid); return; }
         if (!ha.connected) { toast(ha.authFailed ? 'Home Assistant rejected the token' : 'Home Assistant is not connected'); return; }
         var st = ha.states[eid];
         if (!st || st.state === 'unavailable') { toast(displayName(eid) + ' is unavailable'); return; }
@@ -4094,6 +5347,8 @@
         pickRow = 0;
         $('settings').hidden = true;
         $('picker').hidden = false;
+        $('pickHint').innerHTML = 'OK to show or hide &middot; ' + (cfg.senLoc === 'controls' ? 'Sensors, lights, switches and scenes on Controls'
+            : 'Sensors on Home, lights, switches and scenes on Controls') + ', cameras on Cameras &middot; Back to close';
         renderPicker();
         if (ha.connected) { haDiscover(); }   // refresh the list each time the picker opens
     }
@@ -4163,9 +5418,9 @@
                 li.innerHTML = '<span class="box"></span><span class="name"></span><span class="where"></span><span class="val"></span>';
                 li.children[1].textContent = displayName(eid);
                 var kind = kindOf(eid);
-                li.children[2].textContent = (kind === 'button' ? (isDimmable(eid) ? 'Dimmable light' : eid.indexOf('light.') === 0 ? 'Light' : 'Switch')
+                li.children[2].textContent = (kind === 'button' ? (runOf(eid) ? runOf(eid).label : isDimmable(eid) ? 'Dimmable light' : eid.indexOf('light.') === 0 ? 'Light' : 'Switch')
                     : kind === 'camera' ? 'Camera' : 'Sensor') + ' · ' + eid;
-                li.children[3].textContent = kind === 'camera' ? (f.dim ? '–' : cap((ha.states[eid] || {}).state || ''))
+                li.children[3].textContent = runOf(eid) ? ctlState(eid) : kind === 'camera' ? (f.dim ? '–' : cap((ha.states[eid] || {}).state || ''))
                     : f.value + (f.unit ? (f.unit === '°' ? '°' : ' ' + f.unit) : '');
                 frag.appendChild(li);
                 pickItems.push(eid);
@@ -4411,6 +5666,7 @@
     }
 
     function openCamera(eid) {
+        musHold('camera');
         stopCamPlayback();
         var tok = cam.token;
         mode = 'camera';
@@ -4500,6 +5756,7 @@
         applyFocus();
         refreshCamStills();
         updateFx();
+        musUnhold('camera', true);
     }
 
     function switchCamera(dir) {
@@ -4717,7 +5974,9 @@
     // ------------------------------------------------------------------ Settings > Screens
     //
     // Which screens you slide between, and their order. OK shows or hides one; Right picks it up,
-    // Up / Down move it, OK drops it. Home is always there and always first.
+    // Up / Down move it, OK drops it. Home is a screen like the others: hidden, the app dock goes
+    // with it. The first screen shown is where Haven opens and where Back leads. At least one
+    // screen stays on.
 
     var scr = { row: 0, moving: null };
 
@@ -4739,14 +5998,15 @@
     }
 
     function renderScreens() {
-        var list = screensList();
-        var html = '<li class="item checked fixed"><span class="box"></span><span class="name">Home</span>' +
-            '<span class="where">always first</span><span class="val">1</span></li>';
+        var list = screensList(), html = '';
         each(list, function (p, i) {
-            var note = p === P_LIB && !jfSignedIn() ? 'appears once you sign in to Jellyfin' : '';
+            var note = p === startPage() ? 'opens first, Back leads here'
+                : p === P_LIB && !jfSignedIn() ? 'appears once you sign in to Jellyfin'
+                : p === P_HOME && !screenOn(p) ? 'hidden with its app dock'
+                : p === P_MUS ? 'songs from Home Assistant\'s media folder' : '';
             html += '<li class="item' + (screenOn(p) ? ' checked' : '') + (scr.moving === p ? ' moving' : '') + (scr.row === i ? ' focused' : '') +
                 '" data-screen="' + PAGE_KEYS[p] + '"><span class="box"></span><span class="name">' + PAGE_NAMES[p] + '</span>' +
-                '<span class="where">' + note + '</span><span class="val">' + (scr.moving === p ? '↕ ' : '') + (i + 2) + '</span></li>';
+                '<span class="where">' + note + '</span><span class="val">' + (scr.moving === p ? '↕ ' : '') + (i + 1) + '</span></li>';
         });
         $('scrList').innerHTML = html;
         $('scrHint').innerHTML = scr.moving !== null ? 'Up / Down to move &middot; OK to drop it here'
@@ -4774,8 +6034,10 @@
         if (k === KEY.UP) { scr.row = Math.max(0, scr.row - 1); }
         else if (k === KEY.DOWN) { scr.row = Math.min(list.length - 1, scr.row + 1); }
         else if (k === KEY.ENTER) {
-            var key = PAGE_KEYS[list[scr.row]], at = off.indexOf(key);
+            var key = PAGE_KEYS[list[scr.row]], at = off.indexOf(key), left = 0;
             if (at >= 0) { off.splice(at, 1); } else { off.push(key); }
+            each(list, function (p) { if (screenShows(p, off)) { left++; } });
+            if (!left) { toast('At least one screen stays on.', 3000); return true; }
             saveScreens(list, off);
         } else if (k === KEY.RIGHT) { scr.moving = list[scr.row]; }
         else if (isBack(k)) { closeScreens(); return true; }
@@ -4811,11 +6073,12 @@
         if (def.action === 'screens') {
             var names = [];
             each(screensList(), function (p) { if (screenOn(p)) { names.push(PAGE_NAMES[p]); } });
-            return names.length ? names.join(', ') : 'Home only';
+            return names.length ? names.join(', ') : 'Home';
         }
         if (def.action === 'address') { return shortBase(); }
         if (def.action === 'update') { return updateText || 'Check now'; }
         if (def.action === 'diag') { return 'Open'; }
+        if (def.key === 'senLoc') { return def.options[optionIndex(def)][1] + (screenShows(cfg.senLoc === 'controls' ? P_CTL : P_HOME) ? '' : ' (screen hidden)'); }
         return def.options[optionIndex(def)][1];
     }
 
@@ -4837,6 +6100,7 @@
         setRow = 0;
         renderSettings();
         $('settings').hidden = false;
+        if (!mus.dirs && ha.connected) { musLoadDirs().then(null, function () { /* Settings shows Automatic until then */ }); }
     }
 
     function closeOverlays() {
@@ -4867,6 +6131,12 @@
             if (before === 'off' || cfg.season === 'off') { haSubscribe(); }
         }
         if (def.key === 'icons') { applyIcons(); }
+        if (def.key === 'senLoc') { renderWidgets(); }
+        if (def.key === 'musDir') {
+            cfg.musDirName = cfg.musDir ? def.options[i][1] : '';
+            save('musDirName');
+            musFolderChanged();
+        }
         if (def.key === 'theme') {
             applyTheme();
             if (before === 'auto' || cfg.theme === 'auto') { haSubscribe(); }
@@ -4937,6 +6207,7 @@
             ['Weather page', wxStatus()],
             ['Jellyfin', jfStatus()],
             ['Jellyfin player', vpStatus()],
+            ['Music', musStatus()],
             ['Camera player', (H.get('camPlayer', null) ? H.get('camPlayer', null) + ' (worked last time)' : 'not used yet') +
                 (cam.lastError ? ' · last problem: ' + cam.lastError : '')]
         ];
@@ -5000,6 +6271,11 @@
         var k = e.keyCode, handled = true;
         if (!k) { return; }
 
+        if (!trk.open && mode !== 'video' && mode !== 'camera' && mode !== 'editor' && mode !== 'jfinput' && musMediaKey(k)) {
+            if (e.preventDefault) { e.preventDefault(); }
+            return;
+        }
+
         if (trk.open) {
             trkKey(k);
         } else if (mode === 'video') {
@@ -5056,6 +6332,7 @@
 
     function onVisibility() {
         if (document.hidden) {
+            musHold('hidden');                     // first, so closing a camera or film doesn't restart it
             if (mode === 'camera') { closeCamera(); }
             if (mode === 'video') { vpClose(); }   // saves the resume point; the details view offers Resume
             clearInterval(wallTimer);
@@ -5069,12 +6346,15 @@
             if (Date.now() - haListAt > 5 * 60000) { refreshHaWalls(); }
             scheduleWalls();
             if (!ha.ws && !ha.authFailed) { ha.retryMs = 2000; haConnect(); }
+            musUnhold('hidden', false);             // waits, paused, for Play
         }
     }
 
     function init() {
         build();
+        musInit();
         focus = cfg.focus || 0;
+        page = -1;                 // no screen yet: pagesUpdate opens the first one
         pagesUpdate();
         buildDock();
         H.registerKey('ColorF2Yellow');
