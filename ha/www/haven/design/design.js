@@ -426,6 +426,7 @@
             userId: jf.userId, parentId: q.parentId, startIndex: q.startIndex || 0, limit: q.limit === undefined ? 60 : q.limit,
             sortBy: q.sortBy || 'SortName', sortOrder: q.sortOrder || 'Ascending', includeItemTypes: q.includeItemTypes,
             recursive: q.recursive, filters: q.filters, searchTerm: q.searchTerm, nameLessThan: q.nameLessThan,
+            collapseBoxSetItems: false,          // a Jellyfin collection must not swallow the titles it holds
             fields: JF_FIELDS + ',SortName', enableUserData: true
         } });
     }
@@ -441,6 +442,18 @@
     }
 
     function jfItem(id) { return jfRequest('GET', '/Items/' + id, { query: { userId: jf.userId, fields: 'Chapters,MediaStreams,Genres,Overview' } }); }
+
+    // A series: its seasons, and the episodes of one season.
+    function jfSeasons(id) {
+        return jfRequest('GET', '/Shows/' + id + '/Seasons', { query: { userId: jf.userId,
+            fields: 'PrimaryImageAspectRatio,UserData', enableUserData: true } });
+    }
+
+    function jfEpisodes(seriesId, seasonId) {
+        return jfRequest('GET', '/Shows/' + seriesId + '/Episodes', { query: { userId: jf.userId, seasonId: seasonId,
+            fields: 'PrimaryImageAspectRatio,RunTimeTicks,UserData', enableUserData: true,
+            sortBy: 'ParentIndexNumber,IndexNumber', sortOrder: 'Ascending' } });
+    }
 
     function jfSimilar(id, limit) {
         return jfRequest('GET', '/Items/' + id + '/Similar', { query: { userId: jf.userId, limit: limit || 10, fields: JF_FIELDS } });
@@ -998,6 +1011,7 @@
         caps: jfDetectCaps, profile: jfDeviceProfile, normalize: jfNormalize, defaultUrl: jfDefaultUrl,
         session: function () { return { url: jf.url, userId: jf.userId, userName: jf.userName, state: jf.state, signedIn: jfSignedIn() }; },
         views: jfViews, items: jfItems, resume: jfResume, latest: jfLatest, item: jfItem, similar: jfSimilar, image: jfImage,
+        seasons: jfSeasons, episodes: jfEpisodes,
         playbackInfo: jfPlaybackInfo, resolve: jfResolve, report: jfReport,
         play: function (id, opts) { return jfPlaybackInfo(id, opts).then(function (info) { return jfResolve(id, info); }); },
         player: function () {
@@ -2745,7 +2759,8 @@
     var LIB_COLS = 7, LIB_CELL_W = 222, LIB_CELL_H = 388, LIB_WIDE_W = 422, LIB_PAGE = 60;
     var LIB_AREA_H = 870, LIB_STRIP_W = 1770;
     var LIB_SORTS = [['name', 'A to Z'], ['added', 'Recently added'], ['year', 'Year'], ['unwatched', 'Unwatched']];
-    var lib = { loadedAt: 0, loading: false, error: '', cw: [], ra: [], all: [], total: -1, sort: 'name', pages: {},
+    var LIB_TYPES = [['all', 'All'], ['movie', 'Movies'], ['series', 'Series']];   // the filter chips at the top
+    var lib = { loadedAt: 0, loading: false, error: '', cw: [], ra: [], all: [], total: -1, sort: 'name', type: 'all', pages: {},
                 row: 0, col: 0, scrollY: 0, stripX: { cw: 0, ra: 0 }, wantX: 0, layout: null, gen: 0, detail: null };
 
     // Called when the Jellyfin session or Settings > Screens changes: the pages are laid out again,
@@ -2766,8 +2781,33 @@
 
     // ---------------------------------------------------- data
 
+    // The filter chips decide which item types both the rows and the grid ask for.
+    function libTypeItems() { return lib.type === 'movie' ? 'Movie' : lib.type === 'series' ? 'Series' : 'Movie,Series'; }
+    function libTypeResume() { return lib.type === 'movie' ? 'Movie' : lib.type === 'series' ? 'Episode' : 'Movie,Episode'; }
+    function libHeading() { return lib.type === 'movie' ? 'All movies' : lib.type === 'series' ? 'All series' : 'All titles'; }
+    function libCountNoun(n) {
+        if (lib.type === 'movie') { return n === 1 ? ' movie' : ' movies'; }
+        if (lib.type === 'series') { return ' series'; }
+        return n === 1 ? ' title' : ' titles';
+    }
+    function libTypeIndex() {
+        for (var i = 0; i < LIB_TYPES.length; i++) { if (LIB_TYPES[i][0] === lib.type) { return i; } }
+        return 0;
+    }
+
+    // A filter change throws the loaded pages away and asks again.
+    function libSetType(type) {
+        if (type === lib.type) { return; }
+        lib.type = type;
+        lib.all = []; lib.pages = {}; lib.total = -1; lib.cw = []; lib.ra = [];
+        lib.row = 0; lib.col = libTypeIndex(); lib.scrollY = 0;
+        libRender();                              // the chips answer straight away, the grid fills next
+        libLoad(true);
+        libApplyFocus();
+    }
+
     function libSortQuery() {
-        var q = { includeItemTypes: 'Movie', recursive: true };
+        var q = { includeItemTypes: libTypeItems(), recursive: true };
         if (lib.sort === 'added') { q.sortBy = 'DateCreated,SortName'; q.sortOrder = 'Descending'; }
         else if (lib.sort === 'year') { q.sortBy = 'ProductionYear,SortName'; q.sortOrder = 'Descending'; }
         else { q.sortBy = 'SortName'; q.sortOrder = 'Ascending'; }
@@ -2776,12 +2816,13 @@
     }
 
     function libLoad(force) {
-        if (!jfSignedIn() || lib.loading) { return; }
+        if (!jfSignedIn()) { return; }
+        if (!force && lib.loading) { return; }
         if (!force && lib.loadedAt && Date.now() - lib.loadedAt < 120000) { return; }
         lib.loading = true;
         var gen = ++lib.gen;
         if (!lib.loadedAt) { libRender(); }
-        Promise.all([jfResume(12, 'Movie'), jfLatest('Movie', 16), libFetchPage(0, gen)]).then(function (r) {
+        Promise.all([jfResume(12, libTypeResume()), jfLatest(libTypeItems(), 16), libFetchPage(0, gen)]).then(function (r) {
             if (gen !== lib.gen) { return; }
             lib.loading = false;
             lib.error = '';
@@ -2847,7 +2888,7 @@
     // ---------------------------------------------------- layout and rendering
 
     function libRows() {
-        var rows = [];
+        var rows = [{ k: 'type', n: LIB_TYPES.length }];
         if (lib.cw.length) { rows.push({ k: 'cw', n: lib.cw.length }); }
         if (lib.ra.length) { rows.push({ k: 'ra', n: lib.ra.length }); }
         rows.push({ k: 'chips', n: LIB_SORTS.length });
@@ -2858,6 +2899,7 @@
 
     function libComputeLayout() {
         var y = 0, L = { cw: -1, ra: -1 };
+        L.type = y; y += 96;                        // All / Movies / Series at the top of the page
         if (lib.cw.length) { L.cw = y; y += 327 + 30; }
         if (lib.ra.length) { L.ra = y; y += 402 + 30; }
         L.all = y;
@@ -2873,14 +2915,31 @@
         if (kind === 'cw') {
             img = jfImage(it, { type: it.ImageTags && it.ImageTags.Thumb ? 'Thumb' : 'Backdrop', width: 400, height: 225 }) ||
                 jfImage(it, { width: 400, height: 225 });
-            text = '<div class="nm">' + esc(it.Name || '') + '</div><div class="sub">' + esc(libLeft(it)) + '</div>';
+            // an episode shows the series it belongs to, so the row reads like a watch list
+            text = '<div class="nm">' + esc(libCardTitle(it)) + '</div><div class="sub">' + esc(libLeft(it)) + '</div>';
             return '<div class="lcard wide" data-i="' + i + '"><div class="art" style="' + (img ? 'background-image:url(' + img + ')' : '') + '">' +
                 '<div class="pbar"><b style="width:' + libPct(it) + '%"></b></div></div>' + text + '</div>';
         }
         img = jfImage(it, { width: 200, height: 300 });
         return '<div class="lcard" data-i="' + i + '"><div class="art" style="' + (img ? 'background-image:url(' + img + ')' : '') + '">' +
             (it.UserData && it.UserData.Played ? '<span class="tick">&#10003;</span>' : '') + (img ? '' : '<span class="noart">' + esc(it.Name || '') + '</span>') +
-            '</div><div class="nm">' + esc(it.Name || '') + '</div><div class="sub">' + esc(it.ProductionYear || '') + '</div></div>';
+            '</div><div class="nm">' + esc(it.Name || '') + '</div><div class="sub">' + esc(libCardSub(it)) + '</div></div>';
+    }
+
+    // "The Apothecary Diaries · S1 E4" for an episode, the plain name for anything else.
+    function libCardTitle(it) {
+        if (!it || !it.SeriesName) { return (it && it.Name) || ''; }
+        var l = libSeriesLabel(it);
+        return it.SeriesName + (l ? ' · ' + l : '');
+    }
+
+    function libCardSub(it) {
+        if (!it) { return ''; }
+        if (it.Type === 'Series') {
+            if (lib.type === 'series') { return it.ProductionYear || ''; }
+            return it.ProductionYear ? it.ProductionYear + ' · Series' : 'Series';
+        }
+        return it.ProductionYear || '';
     }
 
     function libRender() {
@@ -2892,6 +2951,9 @@
             return;
         }
         var L = libComputeLayout(), html = '<div id="libTrack">';
+        html += '<div class="lall" id="libType" style="top:' + L.type + 'px"><div class="lchips">';
+        each(LIB_TYPES, function (t, i) { html += '<span class="lchip' + (t[0] === lib.type ? ' on' : '') + '" data-i="' + i + '">' + t[1] + '</span>'; });
+        html += '</div></div>';
         if (L.cw >= 0) {
             html += '<div class="lrow" id="libCW" style="top:' + L.cw + 'px"><h3>Continue watching</h3><div class="lstrip">';
             each(lib.cw, function (it, i) { html += libCard(it, 'cw', i); });
@@ -2902,7 +2964,7 @@
             each(lib.ra, function (it, i) { html += libCard(it, 'ra', i); });
             html += '</div></div>';
         }
-        html += '<div class="lall" style="top:' + L.all + 'px"><h3>All movies<span id="libCount"></span></h3><div class="lchips">';
+        html += '<div class="lall" id="libAll" style="top:' + L.all + 'px"><h3>' + libHeading() + '<span id="libCount"></span></h3><div class="lchips">';
         each(LIB_SORTS, function (s, i) { html += '<span class="lchip' + (s[0] === lib.sort ? ' on' : '') + '" data-i="' + i + '">' + s[1] + '</span>'; });
         html += '</div></div><div id="libGrid" style="top:' + L.grid + 'px"></div></div>';
         if (lib.error) { html += '<div class="empty">' + esc(lib.error) + '</div>'; }
@@ -2918,11 +2980,11 @@
         if (!grid || !L) { return; }
         var count = $('libCount');
         if (count) {
-            count.textContent = lib.total < 0 ? '' : lib.total + (lib.total === 1 ? ' movie' : ' movies') +
+            count.textContent = lib.total < 0 ? '' : lib.total + libCountNoun(lib.total) +
                 (lib.sort === 'name' ? ', A to Z' : lib.sort === 'unwatched' ? ' not watched yet' : '');
         }
         if (lib.total === 0) {
-            grid.innerHTML = '<div class="lnone">' + (lib.sort === 'unwatched' ? 'You\'ve watched everything. Nice.' : 'No movies in your Jellyfin library yet.') + '</div>';
+            grid.innerHTML = '<div class="lnone">' + (lib.sort === 'unwatched' ? 'You\'ve watched everything. Nice.' : 'No films or series in your Jellyfin library yet.') + '</div>';
             return;
         }
         var first = Math.max(0, Math.floor((lib.scrollY - L.grid) / LIB_CELL_H) - 1);
@@ -2950,7 +3012,8 @@
         if (!R) { return null; }
         if (R.k === 'cw') { return document.querySelectorAll('#libCW .lcard')[col] || null; }
         if (R.k === 'ra') { return document.querySelectorAll('#libRA .lcard')[col] || null; }
-        if (R.k === 'chips') { return document.querySelectorAll('.lchip')[col] || null; }
+        if (R.k === 'type') { return document.querySelectorAll('#libType .lchip')[col] || null; }
+        if (R.k === 'chips') { return document.querySelectorAll('#libAll .lchip')[col] || null; }
         return document.querySelector('#libGrid .lcard[data-i="' + (R.r * LIB_COLS + col) + '"]');
     }
 
@@ -2980,7 +3043,8 @@
         var L = lib.layout, R = libRows()[lib.row];
         if (!L || !R) { return; }
         var top, bottom;
-        if (R.k === 'cw') { top = L.cw; bottom = L.cw + 327; }
+        if (R.k === 'type') { top = L.type; bottom = L.type + 96; }
+        else if (R.k === 'cw') { top = L.cw; bottom = L.cw + 327; }
         else if (R.k === 'ra') { top = L.ra; bottom = L.ra + 402; }
         else if (R.k === 'chips') { top = L.all; bottom = L.grid + LIB_CELL_H; }
         else { top = R.r === 0 ? L.all : L.grid + R.r * LIB_CELL_H - 20; bottom = L.grid + (R.r + 1) * LIB_CELL_H; }
@@ -3034,7 +3098,7 @@
         if (!R) { return 0; }
         if (R.k === 'cw') { return col * LIB_WIDE_W - lib.stripX.cw + 200; }
         if (R.k === 'ra') { return col * LIB_CELL_W - lib.stripX.ra + 100; }
-        if (R.k === 'chips') { var el = libEl(row, col); return el ? el.offsetLeft + el.offsetWidth / 2 : 0; }
+        if (R.k === 'chips' || R.k === 'type') { var el = libEl(row, col); return el ? el.offsetLeft + el.offsetWidth / 2 : 0; }
         return col * LIB_CELL_W + 100;
     }
 
@@ -3051,6 +3115,8 @@
         lib.col = best;
         if (rows[to].k === 'chips') {            // entering the chips: land on the current sort
             for (c = 0; c < LIB_SORTS.length; c++) { if (LIB_SORTS[c][0] === lib.sort) { lib.col = c; } }
+        } else if (rows[to].k === 'type') {      // and on the filter in use
+            lib.col = libTypeIndex();
         }
         libScroll();
         libApplyFocus();
@@ -3115,7 +3181,8 @@
         else if (k === KEY.CH_UP || k === KEY.PAGE_UP) { libJump(1); }
         else if (k === KEY.CH_DOWN || k === KEY.PAGE_DOWN) { libJump(-1); }
         else if (k === KEY.ENTER) {
-            if (R && R.k === 'chips') { libSetSort(LIB_SORTS[lib.col][0]); }
+            if (R && R.k === 'type') { libSetType(LIB_TYPES[lib.col][0]); }
+            else if (R && R.k === 'chips') { libSetSort(LIB_SORTS[lib.col][0]); }
             else { var it = libItemAt(lib.row, lib.col); if (it) { libOpenDetail(it); } }
         } else if (isBack(k)) { showPage(startPage()); }
         else { return false; }
@@ -3164,11 +3231,88 @@
         return { audio: a, sub: s };
     }
 
-    // keep: { audio, sub, full } when coming back from the player
+    // "S2 E5"; specials (season 0) show just "E3".
+    function libSeriesLabel(it) {
+        if (!it) { return ''; }
+        var s = it.ParentIndexNumber, e = it.IndexNumber, out = '';
+        if (s !== undefined && s !== null && s > 0) { out += 'S' + s; }
+        if (e !== undefined && e !== null) { out += (out ? ' ' : '') + 'E' + e; }
+        return out;
+    }
+
+    // The episode "Play" lands on: what you were watching, else the next one you haven't seen.
+    function libNextEpisode(d) {
+        var eps = (d.series && d.series.eps) || [], i, u;
+        for (i = 0; i < eps.length; i++) {
+            u = eps[i].UserData || {};
+            if (u.PlaybackPositionTicks > 0 && !u.Played) { return eps[i]; }
+        }
+        for (i = 0; i < eps.length; i++) { if (!(eps[i].UserData || {}).Played) { return eps[i]; } }
+        return eps[0] || null;
+    }
+
+    // Plays one episode straight away; the player negotiates the tracks like it does for a film.
+    function libPlayEpisode(ep) {
+        jfItem(ep.Id).then(function (full) {
+            if (!libStreams(full).video) { toast('This episode has no video this TV can play', 6000); return; }
+            var t = libDefaultTracks(libStreams(full)), u = full.UserData || {};
+            vpOpen(full, { start: (u.PlaybackPositionTicks || 0) / JF_TICKS, audio: t.audio, sub: t.sub });
+        }, function () { toast('Jellyfin did not answer for this episode', 6000); });
+    }
+
+    // A series opens on its episode list: a chip per season, a card per episode.
+    function libOpenSeries(d, keep) {
+        var want = (keep && keep.si) || 0;
+        d.series = { seasons: [], si: want, eps: [], cache: {}, loading: true, error: '' };
+        libRenderDetail();
+        jfItem(d.item.Id).then(function (full) {
+            if (lib.detail !== d) { return; }
+            d.full = full;
+            libRenderDetail();
+        }, function () { /* the card already carries enough to draw the page */ });
+        jfSeasons(d.item.Id).then(function (r) {
+            if (lib.detail !== d) { return; }
+            d.series.seasons = (r && r.Items) || [];
+            d.series.si = Math.min(want, Math.max(0, d.series.seasons.length - 1));
+            libSeriesEps(d);
+        }, function (e) {
+            if (lib.detail !== d) { return; }
+            d.series.loading = false;
+            d.series.error = 'Could not load the episodes (' + e.message + ')';
+            libRenderDetail();
+        });
+    }
+
+    // One season's episodes, fetched once and kept while the details view is open.
+    function libSeriesEps(d) {
+        var s = d.series, season = s.seasons[s.si];
+        s.error = '';
+        if (!season) { s.loading = false; s.eps = []; libRenderDetail(); return; }
+        if (s.cache[season.Id]) { s.loading = false; s.eps = s.cache[season.Id]; libRenderDetail(); return; }
+        s.loading = true;
+        s.eps = [];
+        libRenderDetail();
+        jfEpisodes(d.item.Id, season.Id).then(function (r) {
+            if (lib.detail !== d || s.seasons[s.si] !== season) { return; }
+            s.cache[season.Id] = (r && r.Items) || [];
+            s.loading = false;
+            s.eps = s.cache[season.Id];
+            libRenderDetail();
+        }, function (e) {
+            if (lib.detail !== d || s.seasons[s.si] !== season) { return; }
+            s.loading = false;
+            s.error = 'Jellyfin did not answer (' + e.message + ')';
+            libRenderDetail();
+        });
+    }
+
+    // keep: { audio, sub, full, si } when coming back from the player
     function libOpenDetail(base, keep) {
-        var d = { item: base, full: (keep && keep.full) || null, similar: [], row: 0, col: 0, audio: 0, sub: -1, play: null, checks: 0 };
+        var d = { item: base, full: (keep && keep.full) || null, similar: [], row: 0, col: 0, audio: 0, sub: -1, play: null, checks: 0,
+                  series: null };
         if (keep && d.full) { d.audio = keep.audio; d.sub = keep.sub; }
         lib.detail = d;                          // every callback below checks it's still this details view
+        if (base.Type === 'Series') { libOpenSeries(d, keep); libApplyFocus(); return; }
         libRenderDetail();
         jfItem(base.Id).then(function (full) {
             if (lib.detail !== d) { return; }
@@ -3202,6 +3346,15 @@
 
     function libDetailButtons(d) {
         var it = d.full || d.item, u = it.UserData || {}, b = [];
+        if (d.series) {                          // a series plays an episode, so it offers the next one
+            var next = libNextEpisode(d);
+            if (next) {
+                var nu = next.UserData || {};
+                b.push({ k: 'next', html: '<span class="ic">&#9654;</span>' + (nu.PlaybackPositionTicks > 0 ? 'Resume' : 'Play') +
+                    '<small>' + esc((libSeriesLabel(next) || '') + ' ' + (next.Name || '')) + '</small>' });
+            }
+            return b;
+        }
         if (u.PlaybackPositionTicks > 0) { b.push({ k: 'resume', html: '<span class="ic">&#9654;</span>Resume<small>from ' + libClock(u.PlaybackPositionTicks) + '</small>' }); }
         b.push({ k: 'play', html: u.PlaybackPositionTicks > 0 ? '<span class="ic">&#8634;</span>Play from start' : '<span class="ic">&#9654;</span>Play' });
         if (d.full) {
@@ -3210,6 +3363,32 @@
             b.push({ k: 'subs', html: 'Subtitles<small>' + esc(d.sub < 0 ? 'Off' : libSubLabel(st.subs[d.sub])) + '</small>' });
         }
         return b;
+    }
+
+    // The rows of the details view, top to bottom: buttons, seasons (if more than one), episodes, similar titles.
+    function libDetailRows(d) {
+        var rows = [{ k: 'btn', n: libDetailButtons(d).length }];
+        if (d.series) {
+            if (d.series.seasons.length > 1) { rows.push({ k: 'season', n: d.series.seasons.length }); }
+            rows.push({ k: 'ep', n: d.series.eps.length });
+        }
+        if (!d.series && d.similar.length) { rows.push({ k: 'sim', n: d.similar.length }); }
+        return rows;
+    }
+
+    function libDetailRow(d, kind) {
+        var rows = libDetailRows(d), i;
+        for (i = 0; i < rows.length; i++) { if (rows[i].k === kind) { return i; } }
+        return -1;
+    }
+
+    // Keeps the highlighted row and column on something that exists (a row can be empty while it loads).
+    function libDetailClamp(d) {
+        var rows = libDetailRows(d), guard = 0;
+        if (d.row >= rows.length) { d.row = rows.length - 1; }
+        if (d.row < 0) { d.row = 0; }
+        while (rows[d.row] && rows[d.row].n === 0 && guard++ < rows.length) { d.row = (d.row + 1) % rows.length; }
+        d.col = Math.min(d.col, Math.max(0, (rows[d.row] || { n: 1 }).n - 1));
     }
 
     function libClock(ticks) {
@@ -3221,14 +3400,16 @@
         var box = $('libDetail'), d = lib.detail;
         if (!box) { return; }
         if (!d) { box.className = ''; box.innerHTML = ''; return; }
+        libDetailClamp(d);
+        var rowOf = { btn: libDetailRow(d, 'btn'), season: libDetailRow(d, 'season'), ep: libDetailRow(d, 'ep'), sim: libDetailRow(d, 'sim') };
         var it = d.full || d.item, u = it.UserData || {}, st = d.full ? libStreams(d.full) : { video: null, audio: [], subs: [] };
         var back = jfImage(it, { type: 'Backdrop', width: 1920, height: 1080, quality: 80 }) || jfImage(it, { width: 1920, quality: 80 });
         var meta = [], badges = [], v = st.video;
         if (it.ProductionYear) { meta.push(esc(it.ProductionYear)); }
-        if (it.RunTimeTicks) { meta.push(libRuntime(it.RunTimeTicks)); }
+        if (it.RunTimeTicks && !d.series) { meta.push(libRuntime(it.RunTimeTicks)); }
         if (it.OfficialRating) { meta.push('<span class="rate">' + esc(it.OfficialRating) + '</span>'); }
         if (it.CommunityRating) { meta.push('<span class="rstar">&#9733; ' + (Math.round(it.CommunityRating * 10) / 10) + '</span>'); }
-        if (it.RunTimeTicks) { meta.push('Ends at ' + hhmm(new Date(Date.now() + ((it.RunTimeTicks || 0) - (u.PlaybackPositionTicks || 0)) / JF_TICKS * 1000))); }
+        if (it.RunTimeTicks && !d.series) { meta.push('Ends at ' + hhmm(new Date(Date.now() + ((it.RunTimeTicks || 0) - (u.PlaybackPositionTicks || 0)) / JF_TICKS * 1000))); }
         if (v) {
             badges.push(v.Width >= 3800 ? '4K' : v.Height >= 1000 || v.Width >= 1900 ? '1080p' : v.Height >= 700 ? '720p' : (v.Height || '?') + 'p');
             badges.push(libCodec(v.Codec));
@@ -3246,19 +3427,47 @@
             '<div class="ov">' + esc(it.Overview || '') + '</div><div class="badges">';
         each(badges, function (b) { html += '<span class="badge">' + b + '</span>'; });
         if (d.play) { html += '<span class="badge ' + (d.play.ok ? 'ok' : 'warn') + '">' + esc(d.play.label) + '</span>'; }
-        else if (d.full) { html += '<span class="badge">Checking...</span>'; }
+        else if (d.full && !d.series) { html += '<span class="badge">Checking...</span>'; }
         html += '</div>';
         if (d.play && !d.play.ok && d.play.msg) { html += '<div class="dwarn">' + esc(d.play.msg) + '</div>'; }
         html += '<div class="btns">';
-        each(libDetailButtons(d), function (b, i) { html += '<div class="btn' + (d.row === 0 && d.col === i ? ' focused' : '') + '">' + b.html + '</div>'; });
+        each(libDetailButtons(d), function (b, i) { html += '<div class="btn' + (d.row === rowOf.btn && d.col === i ? ' focused' : '') + '">' + b.html + '</div>'; });
         html += '</div>';
+        if (d.series) {
+            var se = d.series, i2, e2, u2, img2;
+            if (se.seasons.length > 1) {
+                html += '<div class="lchips" style="margin-top:24px">';
+                for (i2 = 0; i2 < se.seasons.length; i2++) {
+                    html += '<span class="lchip' + (i2 === se.si ? ' on' : '') + (d.row === rowOf.season && d.col === i2 ? ' focused' : '') + '">' +
+                        esc(se.seasons[i2].Name || ('Season ' + (se.seasons[i2].IndexNumber === undefined ? i2 + 1 : se.seasons[i2].IndexNumber))) + '</span>';
+                }
+                html += '</div>';
+            }
+            html += '<div class="lrow" style="position:static;left:0;height:auto;padding-left:0;margin-top:24px">' +
+                '<h3>' + esc(se.loading ? 'Loading episodes...' : se.error ? se.error :
+                    (se.eps.length ? se.eps.length + (se.eps.length === 1 ? ' episode' : ' episodes') : 'No episodes here yet')) + '</h3>' +
+                '<div class="lstrip" style="width:1100px;overflow:hidden">';
+            for (i2 = 0; i2 < se.eps.length; i2++) {
+                e2 = se.eps[i2];
+                u2 = e2.UserData || {};
+                img2 = jfImage(e2, { type: 'Primary', width: 300, height: 169 }) || jfImage(e2, { type: 'Thumb', width: 300, height: 169 });
+                html += '<div class="lcard' + (d.row === rowOf.ep && d.col === i2 ? ' focused' : '') + '" style="width:300px">' +
+                    '<div class="art" style="width:300px;height:169px;border-radius:14px;overflow:hidden;' + (img2 ? 'background-image:url(' + img2 + ')' : '') + '">' +
+                    (u2.Played ? '<span class="tick">&#10003;</span>' : '') +
+                    (u2.PlaybackPositionTicks > 0 ? '<div class="pbar"><b style="width:' + libPct(e2) + '%"></b></div>' : '') +
+                    (img2 ? '' : '<span class="noart">' + esc(libSeriesLabel(e2)) + '</span>') + '</div>' +
+                    '<div class="nm">' + esc((libSeriesLabel(e2) ? libSeriesLabel(e2) + ' · ' : '') + (e2.Name || '')) + '</div>' +
+                    '<div class="sub">' + esc(libRuntime(e2.RunTimeTicks)) + '</div></div>';
+            }
+            html += '</div></div>';
+        }
         if (u.PlaybackPositionTicks > 0) { html += '<div class="resbar"><b style="width:' + libPct(it) + '%"></b></div>'; }
         html += '</div>';
-        if (d.similar.length) {
+        if (!d.series && d.similar.length) {
             html += '<div class="dsim"><h3>More like this</h3><div class="lstrip">';
             each(d.similar, function (s, i) {
                 var img = jfImage(s, { width: 150, height: 225 });
-                html += '<div class="lcard small' + (d.row === 1 && d.col === i ? ' focused' : '') + '"><div class="art" style="' + (img ? 'background-image:url(' + img + ')' : '') + '"></div></div>';
+                html += '<div class="lcard small' + (d.row === rowOf.sim && d.col === i ? ' focused' : '') + '"><div class="art" style="' + (img ? 'background-image:url(' + img + ')' : '') + '"></div></div>';
             });
             html += '</div></div>';
         }
@@ -3266,7 +3475,9 @@
         box.innerHTML = html;
         box.className = 'open';
         var strip = box.querySelector('.dsim .lstrip');
-        if (strip && d.row === 1) { strip.style.transform = 'translate3d(' + (-Math.max(0, d.col - 8) * 172) + 'px,0,0)'; }
+        if (strip && d.row === rowOf.sim) { strip.style.transform = 'translate3d(' + (-Math.max(0, d.col - 8) * 172) + 'px,0,0)'; }
+        var eps = box.querySelector('#libDetail .lrow .lstrip');
+        if (eps && d.row === rowOf.ep) { eps.style.transform = 'translate3d(' + (-Math.max(0, d.col - 1) * 322) + 'px,0,0)'; }
     }
 
     function libCloseDetail() {
@@ -3276,17 +3487,20 @@
     }
 
     function onDetailKey(k) {
-        var d = lib.detail, buttons = libDetailButtons(d), n = d.row === 0 ? buttons.length : d.similar.length;
+        var d = lib.detail, rows = libDetailRows(d), R = rows[d.row] || rows[0];
         if (k === KEY.LEFT) { if (d.col > 0) { d.col--; } }
-        else if (k === KEY.RIGHT) { if (d.col < n - 1) { d.col++; } }
-        else if (k === KEY.DOWN) { if (d.row === 0 && d.similar.length) { d.row = 1; d.col = 0; } }
-        else if (k === KEY.UP) { if (d.row === 1) { d.row = 0; d.col = 0; } }
+        else if (k === KEY.RIGHT) { if (d.col < R.n - 1) { d.col++; } }
+        else if (k === KEY.DOWN) { if (d.row < rows.length - 1) { d.row++; d.col = 0; } }
+        else if (k === KEY.UP) { if (d.row > 0) { d.row--; d.col = 0; } }
         else if (isBack(k)) { libCloseDetail(); return true; }
         else if (k === KEY.ENTER) {
-            if (d.row === 1) { libOpenDetail(d.similar[d.col]); return true; }
-            var b = buttons[d.col], st = d.full ? libStreams(d.full) : null;
+            if (R.k === 'sim') { libOpenDetail(d.similar[d.col]); return true; }
+            if (R.k === 'season') { d.series.si = d.col; d.series.eps = []; libSeriesEps(d); return true; }
+            if (R.k === 'ep') { if (d.series.eps[d.col]) { libPlayEpisode(d.series.eps[d.col]); } return true; }
+            var b = libDetailButtons(d)[d.col], st = d.full && !d.series ? libStreams(d.full) : null;
             if (b.k === 'audio' && st) { trkOpen(st, d.audio, d.sub, 0, libPickTrack); return true; }
             else if (b.k === 'subs' && st) { trkOpen(st, d.audio, d.sub, 1, libPickTrack); return true; }
+            else if (b.k === 'next' && d.series) { var nx = libNextEpisode(d); if (nx) { libPlayEpisode(nx); } return true; }
             else if (b.k === 'resume' || b.k === 'play') { libPlay(d, b.k === 'resume'); return true; }
         } else { return false; }
         libRenderDetail();
@@ -4032,7 +4246,11 @@
         lib.pages = {};
         libLoad(true);
         var d = lib.detail;
-        if (d && d.item && d.item.Id === item.Id) { libOpenDetail(d.item, { audio: tracks.audio, sub: tracks.sub, full: d.full }); }
+        if (d && d.series && d.item && item.SeriesId && d.item.Id === item.SeriesId) {
+            libOpenDetail(d.item, { si: d.series.si });      // fresh watched state on the episode list
+        } else if (d && d.item && d.item.Id === item.Id) {
+            libOpenDetail(d.item, { audio: tracks.audio, sub: tracks.sub, full: d.full });
+        }
     }
 
     // ------------------------------------------------------------------ Music page
