@@ -481,7 +481,9 @@
             } catch (e) { return false; }
         }
         function call(obj, fn) { try { return !!(obj && obj[fn] && obj[fn]()); } catch (e) { return false; } }
-        var tv = !!H.isTV, uhd = call(wa.productinfo, 'isUdPanelSupported');
+        var tv = !!H.isTV, uhd = call(wa.productinfo, 'isUdPanelSupported') ||
+        (window.screen && (window.screen.width >= 3840 || window.screen.height >= 2160)) ||
+        (window.matchMedia && window.matchMedia('(min-width: 3840px)').matches);
         var c = {
             tv: tv, uhd: uhd,
             h264: true,
@@ -511,6 +513,7 @@
 
     function jfMaxSize() {
         var c = jfDetectCaps(), r = cfg.jfMaxRes;
+        if (r === '2160') { return [3840, 2160]; }
         if (r === '720') { return [1280, 720]; }
         if (r === '1080' || !c.uhd) { return [1920, 1080]; }
         return [3840, 2160];
@@ -825,7 +828,7 @@
             { type: 'info', label: 'Library page', value: (screenOn(P_LIB) ? 'Shown' : 'Hidden') + ' · Settings > Screens to change' },
             { type: 'option', key: 'jfConvert', label: 'Server conversion', options: JF_CONVERT },
             { type: 'option', key: 'jfMaxRes', label: 'Highest resolution',
-              options: [['auto', 'Auto (this TV: ' + (c.uhd ? '4K' : '1080p') + ')'], ['1080', '1080p'], ['720', '720p']] },
+                options: [['auto', 'Auto (this TV: ' + (c.uhd ? '4K' : '1080p') + ')'], ['2160', '4K (2160p)'], ['1080', '1080p'], ['720', '720p']] },
             { type: 'info', label: 'Audio and subtitle languages', value: jfLanguages() },
             { type: 'caps' },
             { type: 'row', label: 'Change server', act: function () { jfp.addr = jf.url; jfp.info = null; jfShowConnect(true); } },
