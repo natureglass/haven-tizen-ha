@@ -440,6 +440,17 @@
             fields: JF_FIELDS, enableUserData: true } });
     }
 
+    function jfSeasons(seriesId) {
+        return jfRequest('GET', '/Shows/' + seriesId + '/Seasons', {
+            query: { userId: jf.userId, fields: JF_FIELDS + ',SortName', enableUserData: true }
+        });
+    }
+
+    function jfSeasonEpisodes(seriesId, seasonId) {
+        return jfRequest('GET', '/Shows/' + seriesId + '/Episodes', {
+            query: { userId: jf.userId, seasonId: seasonId, fields: JF_FIELDS + ',SortName,IndexNumber,ParentIndexNumber', enableUserData: true }
+        });
+    }
     function jfItem(id) { return jfRequest('GET', '/Items/' + id, { query: { userId: jf.userId, fields: 'Chapters,MediaStreams,Genres,Overview' } }); }
 
     function jfSimilar(id, limit) {
@@ -1694,6 +1705,14 @@
             if (ok && result) {
                 ha.all = result;
                 each(result, function (s) { ha.states[s.entity_id] = { state: s.state, attributes: s.attributes || {} }; });
+                // Prune deleted Home Assistant entities from saved widgets
+                if (Array.isArray(cfg.widgets)) {
+                    var cleaned = cfg.widgets.filter(function (eid) { return !!ha.states[eid]; });
+                    if (cleaned.length !== cfg.widgets.length) {
+                        cfg.widgets = cleaned;
+                        save('widgets');
+                    }
+                }
             }
             step();
         });
@@ -2746,7 +2765,7 @@
     var LIB_AREA_H = 870, LIB_STRIP_W = 1770;
     var LIB_SORTS = [['name', 'A to Z'], ['added', 'Recently added'], ['year', 'Year'], ['unwatched', 'Unwatched']];
     var lib = { loadedAt: 0, loading: false, error: '', cw: [], ra: [], all: [], total: -1, sort: 'name', pages: {},
-                row: 0, col: 0, scrollY: 0, stripX: { cw: 0, ra: 0 }, wantX: 0, layout: null, gen: 0, detail: null };
+        row: 0, col: 0, scrollY: 0, stripX: { cw: 0, ra: 0 }, wantX: 0, layout: null, gen: 0, detail: null, stack: [] };
 
     // Called when the Jellyfin session or Settings > Screens changes: the pages are laid out again,
     // and a Library that went away forgets what it had loaded.
@@ -2767,7 +2786,7 @@
     // ---------------------------------------------------- data
 
     function libSortQuery() {
-        var q = { includeItemTypes: 'Movie', recursive: true };
+        var q = { includeItemTypes: 'Movie,Series', recursive: true };
         if (lib.sort === 'added') { q.sortBy = 'DateCreated,SortName'; q.sortOrder = 'Descending'; }
         else if (lib.sort === 'year') { q.sortBy = 'ProductionYear,SortName'; q.sortOrder = 'Descending'; }
         else { q.sortBy = 'SortName'; q.sortOrder = 'Ascending'; }
@@ -2781,7 +2800,7 @@
         lib.loading = true;
         var gen = ++lib.gen;
         if (!lib.loadedAt) { libRender(); }
-        Promise.all([jfResume(12, 'Movie'), jfLatest('Movie', 16), libFetchPage(0, gen)]).then(function (r) {
+        Promise.all([jfResume(12, 'Movie,Episode'), jfLatest('Movie,Series', 16), libFetchPage(0, gen)]).then(function (r) {
             if (gen !== lib.gen) { return; }
             lib.loading = false;
             lib.error = '';
@@ -2845,9 +2864,15 @@
     function libPct(it) { var u = it.UserData || {}; return Math.max(0, Math.min(100, u.PlayedPercentage || 0)); }
 
     // ---------------------------------------------------- layout and rendering
+    function libTop() { return lib.stack && lib.stack.length ? lib.stack[lib.stack.length - 1] : null; }
 
     function libRows() {
-        var rows = [];
+        var top = libTop(), rows = [];
+        if (top) {
+            var n = top.items.length;
+            for (var r = 0; r * LIB_COLS < n; r++) { rows.push({ k: 'grid', r: r, n: Math.min(LIB_COLS, n - r * LIB_COLS) }); }
+            return rows;
+        }
         if (lib.cw.length) { rows.push({ k: 'cw', n: lib.cw.length }); }
         if (lib.ra.length) { rows.push({ k: 'ra', n: lib.ra.length }); }
         rows.push({ k: 'chips', n: LIB_SORTS.length });
@@ -2857,7 +2882,15 @@
     }
 
     function libComputeLayout() {
-        var y = 0, L = { cw: -1, ra: -1 };
+        var top = libTop(), y = 0, L = { cw: -1, ra: -1 };
+        if (top) {
+            L.all = 0;
+            L.chips = -1;
+            L.grid = 78;
+            L.height = L.grid + Math.ceil(top.items.length / LIB_COLS) * LIB_CELL_H;
+            lib.layout = L;
+            return L;
+        }
         if (lib.cw.length) { L.cw = y; y += 327 + 30; }
         if (lib.ra.length) { L.ra = y; y += 402 + 30; }
         L.all = y;
@@ -2869,18 +2902,26 @@
     }
 
     function libCard(it, kind, i) {
-        var img, text;
+        var img, text, sub = '';
         if (kind === 'cw') {
             img = jfImage(it, { type: it.ImageTags && it.ImageTags.Thumb ? 'Thumb' : 'Backdrop', width: 400, height: 225 }) ||
-                jfImage(it, { width: 400, height: 225 });
-            text = '<div class="nm">' + esc(it.Name || '') + '</div><div class="sub">' + esc(libLeft(it)) + '</div>';
+            jfImage(it, { width: 400, height: 225 });
+            var title = it.Type === 'Episode' && it.SeriesName ? it.SeriesName + ' · ' + (it.Name || '') : (it.Name || '');
+            text = '<div class="nm">' + esc(title) + '</div><div class="sub">' + esc(libLeft(it)) + '</div>';
             return '<div class="lcard wide" data-i="' + i + '"><div class="art" style="' + (img ? 'background-image:url(' + img + ')' : '') + '">' +
-                '<div class="pbar"><b style="width:' + libPct(it) + '%"></b></div></div>' + text + '</div>';
+            '<div class="pbar"><b style="width:' + libPct(it) + '%"></b></div></div>' + text + '</div>';
         }
         img = jfImage(it, { width: 200, height: 300 });
+        if (it.Type === 'Episode') {
+            sub = (it.IndexNumber ? 'E' + it.IndexNumber + (it.RunTimeTicks ? ' · ' + libRuntime(it.RunTimeTicks) : '') : libRuntime(it.RunTimeTicks));
+        } else if (it.Type === 'Series') {
+            sub = (it.ProductionYear || '') + (it.ProductionYear ? ' · TV' : 'TV Show');
+        } else {
+            sub = it.ProductionYear || '';
+        }
         return '<div class="lcard" data-i="' + i + '"><div class="art" style="' + (img ? 'background-image:url(' + img + ')' : '') + '">' +
-            (it.UserData && it.UserData.Played ? '<span class="tick">&#10003;</span>' : '') + (img ? '' : '<span class="noart">' + esc(it.Name || '') + '</span>') +
-            '</div><div class="nm">' + esc(it.Name || '') + '</div><div class="sub">' + esc(it.ProductionYear || '') + '</div></div>';
+        (it.UserData && it.UserData.Played ? '<span class="tick">&#10003;</span>' : '') + (img ? '' : '<span class="noart">' + esc(it.Name || '') + '</span>') +
+        '</div><div class="nm">' + esc(it.Name || '') + '</div><div class="sub">' + esc(sub) + '</div></div>';
     }
 
     function libRender() {
@@ -2891,7 +2932,19 @@
             area.innerHTML = '<div class="empty">' + esc(lib.error || 'Loading your library...') + '</div>';
             return;
         }
-        var L = libComputeLayout(), html = '<div id="libTrack">';
+        var top = libTop(), L = libComputeLayout(), html = '<div id="libTrack">';
+        if (top) {
+            var heading = top.level === 'season' && top.item.SeriesName
+            ? top.item.SeriesName + ' · ' + (top.item.Name || 'Season')
+            : (top.item.Name || 'TV Show');
+            html += '<div class="lall" style="top:0px"><h3>' + esc(heading) + '<span id="libCount"></span></h3></div>' +
+            '<div id="libGrid" style="top:' + L.grid + 'px"></div></div>';
+            area.innerHTML = html + '<div id="libRail"></div>';
+            libRenderGrid(true);
+            libScroll();
+            if (page === P_LIB) { libApplyFocus(); }
+            return;
+        }
         if (L.cw >= 0) {
             html += '<div class="lrow" id="libCW" style="top:' + L.cw + 'px"><h3>Continue watching</h3><div class="lstrip">';
             each(lib.cw, function (it, i) { html += libCard(it, 'cw', i); });
@@ -2902,7 +2955,7 @@
             each(lib.ra, function (it, i) { html += libCard(it, 'ra', i); });
             html += '</div></div>';
         }
-        html += '<div class="lall" style="top:' + L.all + 'px"><h3>All movies<span id="libCount"></span></h3><div class="lchips">';
+        html += '<div class="lall" style="top:' + L.all + 'px"><h3>Library<span id="libCount"></span></h3><div class="lchips">';
         each(LIB_SORTS, function (s, i) { html += '<span class="lchip' + (s[0] === lib.sort ? ' on' : '') + '" data-i="' + i + '">' + s[1] + '</span>'; });
         html += '</div></div><div id="libGrid" style="top:' + L.grid + 'px"></div></div>';
         if (lib.error) { html += '<div class="empty">' + esc(lib.error) + '</div>'; }
@@ -2914,32 +2967,39 @@
 
     // Only the grid rows near the screen exist in the page; others are added and removed as you scroll.
     function libRenderGrid(force) {
-        var grid = $('libGrid'), L = lib.layout;
+        var grid = $('libGrid'), L = lib.layout, top = libTop();
         if (!grid || !L) { return; }
+        var items = top ? top.items : lib.all;
+        var total = top ? top.items.length : lib.total;
         var count = $('libCount');
         if (count) {
-            count.textContent = lib.total < 0 ? '' : lib.total + (lib.total === 1 ? ' movie' : ' movies') +
+            if (top) {
+                var unit = top.level === 'series' ? (total === 1 ? ' season' : ' seasons') : (total === 1 ? ' episode' : ' episodes');
+                count.textContent = total + unit;
+            } else {
+                count.textContent = total < 0 ? '' : total + (total === 1 ? ' title' : ' titles') +
                 (lib.sort === 'name' ? ', A to Z' : lib.sort === 'unwatched' ? ' not watched yet' : '');
+            }
         }
-        if (lib.total === 0) {
-            grid.innerHTML = '<div class="lnone">' + (lib.sort === 'unwatched' ? 'You\'ve watched everything. Nice.' : 'No movies in your Jellyfin library yet.') + '</div>';
+        if (total === 0) {
+            grid.innerHTML = '<div class="lnone">' + (top ? 'Loading...' : lib.sort === 'unwatched' ? 'You\'ve watched everything. Nice.' : 'No titles in your Jellyfin library yet.') + '</div>';
             return;
         }
         var first = Math.max(0, Math.floor((lib.scrollY - L.grid) / LIB_CELL_H) - 1);
         var last = Math.floor((lib.scrollY + LIB_AREA_H - L.grid) / LIB_CELL_H) + 1;
-        var from = first * LIB_COLS, to = Math.min(Math.max(0, lib.total), (last + 1) * LIB_COLS);
+        var from = first * LIB_COLS, to = Math.min(Math.max(0, total), (last + 1) * LIB_COLS);
         var keep = {}, i;
         each(grid.querySelectorAll('.lcard'), function (el) {
             var n = +el.getAttribute('data-i');
-            if (n < from || n >= to || (force && !el.getAttribute('data-ok') && lib.all[n])) { grid.removeChild(el); } else { keep[n] = true; }
+            if (n < from || n >= to || (force && !el.getAttribute('data-ok') && items[n])) { grid.removeChild(el); } else { keep[n] = true; }
         });
         var html = '';
         for (i = from; i < to; i++) {
             if (keep[i]) { continue; }
-            var it = lib.all[i], x = (i % LIB_COLS) * LIB_CELL_W, y = Math.floor(i / LIB_COLS) * LIB_CELL_H;
+            var it = items[i], x = (i % LIB_COLS) * LIB_CELL_W, y = Math.floor(i / LIB_COLS) * LIB_CELL_H;
             html += it ? libCard(it, 'grid', i).replace('<div class="lcard"', '<div class="lcard" data-ok="1" style="left:' + x + 'px;top:' + y + 'px"')
-                : '<div class="lcard wait" data-i="' + i + '" style="left:' + x + 'px;top:' + y + 'px"><div class="art"></div></div>';
-            if (!it) { libFetchPage(i, lib.gen).then(null, function () { /* retried when scrolled to again */ }); }
+            : '<div class="lcard wait" data-i="' + i + '" style="left:' + x + 'px;top:' + y + 'px"><div class="art"></div></div>';
+            if (!it && !top) { libFetchPage(i, lib.gen).then(null, function () { /* retried when scrolled to again */ }); }
         }
         if (html) { grid.insertAdjacentHTML('beforeend', html); }
         if (page === P_LIB) { libApplyFocus(); }
@@ -2955,11 +3015,11 @@
     }
 
     function libItemAt(row, col) {
-        var R = libRows()[row];
+        var R = libRows()[row], top = libTop();
         if (!R) { return null; }
         if (R.k === 'cw') { return lib.cw[col]; }
         if (R.k === 'ra') { return lib.ra[col]; }
-        if (R.k === 'grid') { return lib.all[R.r * LIB_COLS + col] || null; }
+        if (R.k === 'grid') { return (top ? top.items : lib.all)[R.r * LIB_COLS + col] || null; }
         return null;
     }
 
@@ -3098,6 +3158,52 @@
         }, function () { /* stay */ });
     }
 
+    function libDrillInto(it) {
+        if (!it) { return; }
+        if (it.Type === 'Series') {
+            var entry = { level: 'series', item: it, items: [], row: 0, col: 0, scrollY: 0 };
+            lib.stack.push(entry);
+            lib.row = 0; lib.col = 0; lib.scrollY = 0;
+            libRender();
+            jfSeasons(it.Id).then(function (res) {
+                if (lib.stack[lib.stack.length - 1] !== entry) { return; }
+                entry.items = (res && res.Items) || [];
+                libRender();
+            }, function () {
+                if (lib.stack[lib.stack.length - 1] === entry) { libRender(); }
+            });
+            return;
+        }
+        if (it.Type === 'Season') {
+            var seriesEntry = lib.stack[lib.stack.length - 1];
+            var seriesId = (seriesEntry && seriesEntry.item && seriesEntry.item.Id) || it.SeriesId;
+            var sEntry = { level: 'season', item: it, items: [], row: 0, col: 0, scrollY: 0 };
+            lib.stack.push(sEntry);
+            lib.row = 0; lib.col = 0; lib.scrollY = 0;
+            libRender();
+            jfSeasonEpisodes(seriesId, it.Id).then(function (res) {
+                if (lib.stack[lib.stack.length - 1] !== sEntry) { return; }
+                sEntry.items = (res && res.Items) || [];
+                libRender();
+            }, function () {
+                if (lib.stack[lib.stack.length - 1] === sEntry) { libRender(); }
+            });
+            return;
+        }
+        libOpenDetail(it);
+    }
+
+    function libDrillBack() {
+        if (!lib.stack || !lib.stack.length) { return false; }
+        var prev = lib.stack.pop();
+        var parent = lib.stack[lib.stack.length - 1];
+        lib.row = parent ? parent.row : 0;
+        lib.col = parent ? parent.col : 0;
+        lib.scrollY = parent ? parent.scrollY : 0;
+        libRender();
+        return true;
+    }
+
     function onLibKey(k) {
         if (lib.detail) { return onDetailKey(k); }
         if (!lib.loadedAt) {
@@ -3116,9 +3222,10 @@
         else if (k === KEY.CH_DOWN || k === KEY.PAGE_DOWN) { libJump(-1); }
         else if (k === KEY.ENTER) {
             if (R && R.k === 'chips') { libSetSort(LIB_SORTS[lib.col][0]); }
-            else { var it = libItemAt(lib.row, lib.col); if (it) { libOpenDetail(it); } }
-        } else if (isBack(k)) { showPage(startPage()); }
-        else { return false; }
+            else { var it = libItemAt(lib.row, lib.col); if (it) { libDrillInto(it); } }
+        } else if (isBack(k)) {
+            if (!libDrillBack()) { showPage(startPage()); }
+        } else { return false; }
         return true;
     }
 
