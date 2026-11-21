@@ -368,8 +368,8 @@
 #libArea h3 span { margin-left: 12px; text-transform: none; letter-spacing: 0; font-weight: 400; }
 
 .lrow, .lall, #libGrid { position: absolute; left: 0; right: 0; }
-.lrow { left: -40px; padding-left: 40px; height: 327px; overflow: hidden; }
-#libRA { height: 402px; }
+.lrow { left: -40px; padding-left: 40px; height: 351px; overflow: hidden; }
+#libRA { height: 426px; }
 .lstrip { display: flex; transition: transform 0.25s ease-out; will-change: transform; }
 
 .lcard { width: 200px; margin-right: 22px; flex: none; }

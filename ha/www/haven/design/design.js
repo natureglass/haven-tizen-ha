@@ -2758,6 +2758,10 @@
     var P_LIB = 4;
     var LIB_COLS = 7, LIB_CELL_W = 222, LIB_CELL_H = 388, LIB_WIDE_W = 422, LIB_PAGE = 60;
     var LIB_AREA_H = 870, LIB_STRIP_W = 1770;
+    // A row is its heading plus a card (art + title + subtitle): 42 + 287 wide, 42 + 362 poster.
+    // The extra room over that keeps the subtitle clear of the row's overflow edge, which a
+    // television's own fonts need - on some sets the two text lines are taller than in a browser.
+    var LIB_ROW_H = 351, LIB_ROW_RA_H = 426;
     var LIB_SORTS = [['name', 'A to Z'], ['added', 'Recently added'], ['year', 'Year'], ['unwatched', 'Unwatched']];
     var LIB_TYPES = [['all', 'All'], ['movie', 'Movies'], ['series', 'Series']];   // the filter chips at the top
     var lib = { loadedAt: 0, loading: false, error: '', cw: [], ra: [], all: [], total: -1, sort: 'name', type: 'all', pages: {},
@@ -2900,8 +2904,8 @@
     function libComputeLayout() {
         var y = 0, L = { cw: -1, ra: -1 };
         L.type = y; y += 96;                        // All / Movies / Series at the top of the page
-        if (lib.cw.length) { L.cw = y; y += 327 + 30; }
-        if (lib.ra.length) { L.ra = y; y += 402 + 30; }
+        if (lib.cw.length) { L.cw = y; y += LIB_ROW_H + 30; }
+        if (lib.ra.length) { L.ra = y; y += LIB_ROW_RA_H + 30; }
         L.all = y;
         L.chips = y + 50;
         L.grid = y + 128;
@@ -2955,12 +2959,12 @@
         each(LIB_TYPES, function (t, i) { html += '<span class="lchip' + (t[0] === lib.type ? ' on' : '') + '" data-i="' + i + '">' + t[1] + '</span>'; });
         html += '</div></div>';
         if (L.cw >= 0) {
-            html += '<div class="lrow" id="libCW" style="top:' + L.cw + 'px"><h3>Continue watching</h3><div class="lstrip">';
+            html += '<div class="lrow" id="libCW" style="top:' + L.cw + 'px;height:' + LIB_ROW_H + 'px"><h3>Continue watching</h3><div class="lstrip">';
             each(lib.cw, function (it, i) { html += libCard(it, 'cw', i); });
             html += '</div></div>';
         }
         if (L.ra >= 0) {
-            html += '<div class="lrow" id="libRA" style="top:' + L.ra + 'px"><h3>Recently added</h3><div class="lstrip">';
+            html += '<div class="lrow" id="libRA" style="top:' + L.ra + 'px;height:' + LIB_ROW_RA_H + 'px"><h3>Recently added</h3><div class="lstrip">';
             each(lib.ra, function (it, i) { html += libCard(it, 'ra', i); });
             html += '</div></div>';
         }
@@ -3044,8 +3048,8 @@
         if (!L || !R) { return; }
         var top, bottom;
         if (R.k === 'type') { top = L.type; bottom = L.type + 96; }
-        else if (R.k === 'cw') { top = L.cw; bottom = L.cw + 327; }
-        else if (R.k === 'ra') { top = L.ra; bottom = L.ra + 402; }
+        else if (R.k === 'cw') { top = L.cw; bottom = L.cw + LIB_ROW_H; }
+        else if (R.k === 'ra') { top = L.ra; bottom = L.ra + LIB_ROW_RA_H; }
         else if (R.k === 'chips') { top = L.all; bottom = L.grid + LIB_CELL_H; }
         else { top = R.r === 0 ? L.all : L.grid + R.r * LIB_CELL_H - 20; bottom = L.grid + (R.r + 1) * LIB_CELL_H; }
         // a row that isn't fully visible is brought in with its top at the top: no half rows above it
