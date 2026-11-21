@@ -88,13 +88,14 @@ the home screen.
 - **Clock and wallpapers:** six built-in nature scenes plus your own photos from Home
   Assistant, resized for the TV automatically.
 - **Library (Jellyfin):** sign in to your Jellyfin server from Settings with Quick Connect
-  or a password and a fifth page appears with your movies: Continue watching, Recently
-  added, and every movie in a poster grid you can sort and jump through by letter. OK opens
-  the details: rating, runtime, when it would end, audio and subtitle languages, and whether
-  this TV plays the file as it is. Haven detects what your TV can play and negotiates every
-  title with Jellyfin accordingly, then plays it full screen with Samsung's own player:
-  resume, seeking, chapters, audio tracks and subtitles, with your progress saved to
-  Jellyfin. TV shows come next.
+  or a password and a fifth page appears with your films and series: Continue watching,
+  Recently added, and everything in a poster grid you can sort, filter with the All / Movies
+  / Series chips and jump through by letter. OK opens a film's details: rating, runtime, when
+  it would end, audio and subtitle languages, and whether this TV plays the file as it is. A
+  series opens its seasons and episodes instead, with Play/Resume on the episode you were
+  watching. Haven detects what your TV can play and negotiates every title with Jellyfin
+  accordingly, then plays it full screen with Samsung's own player: resume, seeking, chapters,
+  audio tracks and subtitles, with your progress saved to Jellyfin.
 - **Auto-discovery:** on first connection Haven picks sensible defaults (weather, a few
   temperatures, solar, humidity, up to 12 lights and all cameras). It finds solar from the
   Energy dashboard, prefers camera sub-streams, and skips diagnostic entities. A picker on
@@ -534,9 +535,11 @@ Settings > Screens; if the screen you pick is hidden, the setting says so.
 - The Yellow panel shows the Jellyfin server, user and conversion setting.
 
 **Library:** the fifth page, after Cameras.
-- **Rows:** *Continue watching* (with how much is left), *Recently added*, then *All movies*.
-  Up and Down move between rows, Left and Right along them.
-- **All movies:** a poster grid with sort chips above it: A to Z, Recently added, Year and
+- **Filter:** the chips at the top pick *All*, *Movies* or *Series*; the rows, the grid and
+  the counts follow it.
+- **Rows:** *Continue watching* (with how much is left; a series episode reads "Show · S1 E4"),
+  *Recently added*, then *All titles*. Up and Down move between rows, Left and Right along them.
+- **All titles:** a poster grid with sort chips above it: A to Z, Recently added, Year and
   Unwatched. Watched titles carry a tick. Posters load as you scroll, so large libraries stay
   quick.
 - **Jumping:** CH + / CH - jump to the next or previous letter in A to Z (a letter rail on the
@@ -548,6 +551,10 @@ Settings > Screens; if the screen you pick is hidden, the setting says so.
   from your profile; OK on either opens a list to choose another, and the badge updates (a
   DTS track turns *Direct play* into *Audio converted*). *More like this* sits underneath.
   Back closes it.
+- **Series:** OK on a series poster lists its episodes, with a chip per season when it has
+  more than one, a tick on the ones you have watched and a bar on the ones you are part way
+  through. *Play* at the top (it reads *Resume* when you were part way through) continues the
+  episode you are on, and OK on any episode starts it straight away.
 
 **Playing:** *Resume*, *Play* or *Play from start* in the details view.
 - **The player:** Samsung's AVPlay, the TV's own video engine, so MKV, HEVC, HDR10 and Dolby
