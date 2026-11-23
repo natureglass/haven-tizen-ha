@@ -455,6 +455,13 @@
             sortBy: 'ParentIndexNumber,IndexNumber', sortOrder: 'Ascending' } });
     }
 
+    // The episode to play next in a series, across seasons: the one part way through, else the
+    // next unwatched one (Jellyfin's own Next up, which leaves specials out).
+    function jfNextUp(seriesId) {
+        return jfRequest('GET', '/Shows/NextUp', { query: { userId: jf.userId, seriesId: seriesId, limit: 1,
+            fields: 'PrimaryImageAspectRatio,RunTimeTicks,UserData', enableUserData: true } });
+    }
+
     function jfSimilar(id, limit) {
         return jfRequest('GET', '/Items/' + id + '/Similar', { query: { userId: jf.userId, limit: limit || 10, fields: JF_FIELDS } });
     }
@@ -1011,7 +1018,7 @@
         caps: jfDetectCaps, profile: jfDeviceProfile, normalize: jfNormalize, defaultUrl: jfDefaultUrl,
         session: function () { return { url: jf.url, userId: jf.userId, userName: jf.userName, state: jf.state, signedIn: jfSignedIn() }; },
         views: jfViews, items: jfItems, resume: jfResume, latest: jfLatest, item: jfItem, similar: jfSimilar, image: jfImage,
-        seasons: jfSeasons, episodes: jfEpisodes,
+        seasons: jfSeasons, episodes: jfEpisodes, nextUp: jfNextUp,
         playbackInfo: jfPlaybackInfo, resolve: jfResolve, report: jfReport,
         play: function (id, opts) { return jfPlaybackInfo(id, opts).then(function (info) { return jfResolve(id, info); }); },
         player: function () {
@@ -3246,6 +3253,7 @@
 
     // The episode "Play" lands on: what you were watching, else the next one you haven't seen.
     function libNextEpisode(d) {
+        if (d.series && d.series.next) { return d.series.next; }
         var eps = (d.series && d.series.eps) || [], i, u;
         for (i = 0; i < eps.length; i++) {
             u = eps[i].UserData || {};
@@ -3266,18 +3274,27 @@
 
     // A series opens on its episode list: a chip per season, a card per episode.
     function libOpenSeries(d, keep) {
-        var want = (keep && keep.si) || 0;
-        d.series = { seasons: [], si: want, eps: [], cache: {}, loading: true, error: '' };
+        var want = keep && keep.si !== undefined ? keep.si : -1;
+        d.series = { seasons: [], si: Math.max(0, want), eps: [], cache: {}, loading: true, error: '', next: null };
         libRenderDetail();
         jfItem(d.item.Id).then(function (full) {
             if (lib.detail !== d) { return; }
             d.full = full;
             libRenderDetail();
         }, function () { /* the card already carries enough to draw the page */ });
-        jfSeasons(d.item.Id).then(function (r) {
+        var next = jfNextUp(d.item.Id).then(function (r) { return (r && r.Items && r.Items[0]) || null; },
+                                            function () { return null; });    // no Next up: the season rule below decides
+        Promise.all([jfSeasons(d.item.Id), next]).then(function (res) {
             if (lib.detail !== d) { return; }
-            d.series.seasons = (r && r.Items) || [];
-            d.series.si = Math.min(want, Math.max(0, d.series.seasons.length - 1));
+            var seasons = (res[0] && res[0].Items) || [], nx = res[1], i, pick = -1;
+            d.series.seasons = seasons;
+            d.series.next = nx;
+            if (want >= 0) { pick = Math.min(want, seasons.length - 1); }
+            for (i = 0; pick < 0 && nx && i < seasons.length; i++) {
+                if (seasons[i].Id === nx.SeasonId || (nx.SeasonId === undefined && seasons[i].IndexNumber === nx.ParentIndexNumber)) { pick = i; }
+            }
+            for (i = 0; pick < 0 && i < seasons.length; i++) { if (seasons[i].IndexNumber !== 0) { pick = i; } }
+            d.series.si = Math.max(0, pick);
             libSeriesEps(d);
         }, function (e) {
             if (lib.detail !== d) { return; }
@@ -3356,6 +3373,8 @@
                 var nu = next.UserData || {};
                 b.push({ k: 'next', html: '<span class="ic">&#9654;</span>' + (nu.PlaybackPositionTicks > 0 ? 'Resume' : 'Play') +
                     '<small>' + esc((libSeriesLabel(next) || '') + ' ' + (next.Name || '')) + '</small>' });
+            } else if (d.series.loading) {      // a stand-in, so the focus starts here and stays when Play arrives
+                b.push({ k: 'wait', html: '<span class="ic">&#9654;</span>Play<small>Loading...</small>' });
             }
             return b;
         }
