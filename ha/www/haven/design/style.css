@@ -1470,6 +1470,10 @@
     border-color: var(--ok);
 }
 
+/* a saved widget whose entity left Home Assistant: still ticked, dimmed, OK removes it */
+.picklist li.item.gone .name { opacity: 0.6; text-decoration: line-through; }
+.picklist li.item.gone.checked .box { background: var(--panel-dim); border-color: var(--panel-dim); }
+
 .picklist li.item .name {
     flex: 1;
     overflow: hidden;

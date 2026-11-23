@@ -518,8 +518,12 @@
         return c;
     }
 
+    // 4K for this TV: detected, or chosen in Settings > Jellyfin for a 4K set that reports itself as 1080p.
+    function jfUhd() { return cfg.jfMaxRes === '2160' || jfDetectCaps().uhd; }
+
     function jfMaxSize() {
         var c = jfDetectCaps(), r = cfg.jfMaxRes;
+        if (r === '2160') { return [3840, 2160]; }
         if (r === '720') { return [1280, 720]; }
         if (r === '1080' || !c.uhd) { return [1920, 1080]; }
         return [3840, 2160];
@@ -834,7 +838,7 @@
             { type: 'info', label: 'Library page', value: (screenOn(P_LIB) ? 'Shown' : 'Hidden') + ' · Settings > Screens to change' },
             { type: 'option', key: 'jfConvert', label: 'Server conversion', options: JF_CONVERT },
             { type: 'option', key: 'jfMaxRes', label: 'Highest resolution',
-              options: [['auto', 'Auto (this TV: ' + (c.uhd ? '4K' : '1080p') + ')'], ['1080', '1080p'], ['720', '720p']] },
+              options: [['auto', 'Auto (this TV: ' + (c.uhd ? '4K' : '1080p') + ')'], ['2160', '4K (2160p)'], ['1080', '1080p'], ['720', '720p']] },
             { type: 'info', label: 'Audio and subtitle languages', value: jfLanguages() },
             { type: 'caps' },
             { type: 'row', label: 'Change server', act: function () { jfp.addr = jf.url; jfp.info = null; jfShowConnect(true); } },
@@ -1077,7 +1081,7 @@
     // A weather entity: the one on Home if there is one, otherwise the first one in HA.
     function weatherEid() {
         var list = selected(), i;
-        for (i = 0; i < list.length; i++) { if (domainOf(list[i]) === 'weather') { return list[i]; } }
+        for (i = 0; i < list.length; i++) { if (domainOf(list[i]) === 'weather' && !widgetGone(list[i])) { return list[i]; } }
         for (i = 0; i < ha.all.length; i++) { if (domainOf(ha.all[i].entity_id) === 'weather') { return ha.all[i].entity_id; } }
         return null;
     }
@@ -1549,7 +1553,11 @@
         ws: null, connected: false, authFailed: false, status: '', nextId: 1, pending: {}, subId: null,
         retryMs: 2000, retryTimer: null,
         discovered: false, all: [], states: {}, areaName: {}, entityArea: {}, entityDevice: {}, hidden: {},
-        solarEnergy: [], solarPower: [], suggested: []
+        solarEnergy: [], solarPower: [], suggested: [],
+        // For widgets whose entity left Home Assistant: the entity ids in the last get_states, the
+        // entity registry ('on' or 'disabled' per id, null when this user can't read it) and whether
+        // HA has finished starting. Only all three together say an entity is really gone.
+        live: null, registry: null, running: false
     };
 
     // Last known values so widgets can show (dimmed) while Home Assistant is unreachable.
@@ -1566,7 +1574,7 @@
             var states = {}, areas = {}, entityArea = {};
             each(selected(), function (eid) {
                 var st = ha.states[eid];
-                if (!st) { return; }
+                if (!st || widgetGone(eid)) { return; }
                 var a = st.attributes || {}, keep = {};
                 each(['friendly_name', 'unit_of_measurement', 'device_class', 'temperature', 'current_temperature', 'hvac_action', 'entity_picture',
                     'brightness', 'supported_color_modes', 'last_triggered'],
@@ -1587,7 +1595,23 @@
     function selected() { return cfg.widgets || []; }
     function selectedOf(kind) {
         var out = [];
-        each(selected(), function (eid) { if (kindOf(eid) === kind) { out.push(eid); } });
+        each(selected(), function (eid) { if (kindOf(eid) === kind && !widgetGone(eid)) { out.push(eid); } });
+        return out;
+    }
+
+    // 'removed' or 'disabled' for a saved widget whose entity Home Assistant no longer has, '' otherwise.
+    // Such widgets are hidden and listed in the picker to remove; nothing is deleted on its own, so a
+    // widget comes back if its entity does. It only counts as gone once HA has finished starting, its
+    // entity registry could be read and the entity is in neither the states nor (enabled) the registry.
+    function widgetGone(eid) {
+        if (!ha.live || !ha.registry || !ha.running || ha.live[eid]) { return ''; }
+        var r = ha.registry[eid];
+        return !r ? 'removed' : r === 'disabled' ? 'disabled' : '';
+    }
+
+    function goneWidgets() {
+        var out = [];
+        each(selected(), function (eid) { if (kindOf(eid) && widgetGone(eid)) { out.push(eid); } });
         return out;
     }
 
@@ -1691,7 +1715,7 @@
     // ---------------------------------------------------- discovery
 
     function haDiscover(done) {
-        var left = 5, devArea = {}, reg = [];
+        var left = 6, devArea = {}, reg = [], regOk = false;
         function step() {
             if (--left > 0) { return; }
             each(reg, function (e) {
@@ -1699,6 +1723,12 @@
                 if (e.device_id) { ha.entityDevice[e.entity_id] = e.device_id; }
                 if (e.hidden_by || e.disabled_by || e.entity_category) { ha.hidden[e.entity_id] = true; }
             });
+            if (regOk) {
+                ha.registry = {};
+                each(reg, function (e) { ha.registry[e.entity_id] = e.disabled_by ? 'disabled' : 'on'; });
+            } else {
+                ha.registry = null;
+            }
             if (!ha.all.length) { if (done) { done(); } return; }   // connection dropped mid-way; retry later
             ha.discovered = true;
             buildSuggestions();
@@ -1714,7 +1744,8 @@
         haSend('get_states', {}, function (ok, result) {
             if (ok && result) {
                 ha.all = result;
-                each(result, function (s) { ha.states[s.entity_id] = { state: s.state, attributes: s.attributes || {} }; });
+                ha.live = {};
+                each(result, function (s) { ha.states[s.entity_id] = { state: s.state, attributes: s.attributes || {} }; ha.live[s.entity_id] = true; });
             }
             step();
         });
@@ -1727,7 +1758,12 @@
             step();
         });
         haSend('config/entity_registry/list', {}, function (ok, result) {
-            if (ok && result) { reg = result; }
+            if (ok && result) { reg = result; regOk = true; }
+            step();
+        });
+        // RUNNING once every integration has had its go at starting; before that, missing entities may just be late
+        haSend('get_config', {}, function (ok, result) {
+            ha.running = !!(ok && result && (result.state === undefined || result.state === 'RUNNING'));
             step();
         });
         // The Energy dashboard knows exactly which sensors are your solar panels.
@@ -1835,7 +1871,7 @@
                 if (diff['-'] && diff['-'].a) { each(diff['-'].a, function (name) { delete cur.attributes[name]; }); }
             }
         }
-        if (ev.r) { each(ev.r, function (gone) { delete ha.states[gone]; }); }
+        if (ev.r) { each(ev.r, function (gone) { delete ha.states[gone]; if (ha.live) { delete ha.live[gone]; } }); }
         renderWidgets();
         if (ev.a && selectedOf('camera').length) { refreshCamStills(); }
         if (cfg.season !== 'off') { updateFx(); }
@@ -3816,7 +3852,7 @@
         vp.at = vp.pos = at;
         vpRenderStatic();
         vpClass();
-        eng.open(r.url, { start: at, uhd: !!(v && v.Width > 1920 && jfDetectCaps().uhd),
+        eng.open(r.url, { start: at, uhd: !!(v && v.Width > 1920 && jfUhd()),
                           audioTrack: r.method === 'DirectPlay' && vp.streams.audio.length > 1 ? r.audio : -1 }, {
             ready: function () { if (tok === vp.tok) { vpReady(); } },
             buffering: function (b) { if (tok === vp.tok) { vp.buffering = b; vpClass(); } },
@@ -5619,8 +5655,10 @@
             ul.appendChild(li);
             return;
         }
-        var sections = [['Suggested', ha.suggested]];
+        var gone = goneWidgets();
+        var sections = [['No longer in Home Assistant', gone], ['Suggested', ha.suggested]];
         var listed = {}, byArea = {}, areaNames = [];
+        each(gone, function (eid) { listed[eid] = true; });
         each(ha.suggested, function (eid) { listed[eid] = true; });
         each(selected(), function (eid) {        // chosen items that are not suggestions come first in their area
             if (!listed[eid] && ha.states[eid]) { var a = areaOf(eid) || 'No area'; (byArea[a] = byArea[a] || []).push(eid); listed[eid] = true; }
@@ -5658,7 +5696,14 @@
                 li.setAttribute('data-eid', eid);
                 li.innerHTML = '<span class="box"></span><span class="name"></span><span class="where"></span><span class="val"></span>';
                 li.children[1].textContent = displayName(eid);
-                var kind = kindOf(eid);
+                var kind = kindOf(eid), why = widgetGone(eid);
+                if (why) {
+                    li.className += ' gone';
+                    li.children[2].textContent = (why === 'disabled' ? 'Disabled in Home Assistant' : 'Removed from Home Assistant') + ' · ' + eid;
+                    frag.appendChild(li);
+                    pickItems.push(eid);
+                    return;
+                }
                 li.children[2].textContent = (kind === 'button' ? (runOf(eid) ? runOf(eid).label : isDimmable(eid) ? 'Dimmable light' : eid.indexOf('light.') === 0 ? 'Light' : 'Switch')
                     : kind === 'camera' ? 'Camera' : 'Sensor') + ' · ' + eid;
                 li.children[3].textContent = runOf(eid) ? ctlState(eid) : kind === 'camera' ? (f.dim ? '–' : cap((ha.states[eid] || {}).state || ''))
@@ -5715,9 +5760,11 @@
     }
 
     function pickCountText() {
+        var gone = goneWidgets().length;
         return 'Sensors ' + selectedOf('sensor').length + ' of ' + MAX_SENSORS +
             ' · Lights and switches ' + selectedOf('button').length + ' of ' + MAX_BUTTONS +
-            ' · Cameras ' + selectedOf('camera').length + ' of ' + MAX_CAMERAS;
+            ' · Cameras ' + selectedOf('camera').length + ' of ' + MAX_CAMERAS +
+            (gone ? ' · ' + gone + ' no longer in Home Assistant' : '');
     }
 
     // ================================================================== dock
