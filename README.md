@@ -551,10 +551,11 @@ Settings > Screens; if the screen you pick is hidden, the setting says so.
   from your profile; OK on either opens a list to choose another, and the badge updates (a
   DTS track turns *Direct play* into *Audio converted*). *More like this* sits underneath.
   Back closes it.
-- **Series:** OK on a series poster lists its episodes, with a chip per season when it has
-  more than one, a tick on the ones you have watched and a bar on the ones you are part way
-  through. *Play* at the top (it reads *Resume* when you were part way through) continues the
-  episode you are on, and OK on any episode starts it straight away.
+- **Series:** OK on a series poster opens it on the season you're up to, with a chip per
+  season when it has more than one, a tick on the episodes you have watched and a bar on the
+  ones you are part way through. *Play* at the top (it reads *Resume* when you were part way
+  through) starts the next episode across all seasons, using Jellyfin's *Next up* and leaving
+  specials out, and OK on any episode starts it straight away.
 
 **Playing:** *Resume*, *Play* or *Play from start* in the details view.
 - **The player:** Samsung's AVPlay, the TV's own video engine, so MKV, HEVC, HDR10 and Dolby
