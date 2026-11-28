@@ -2801,6 +2801,9 @@
     var P_LIB = 4;
     var LIB_COLS = 7, LIB_CELL_W = 222, LIB_CELL_H = 388, LIB_WIDE_W = 422, LIB_PAGE = 60;
     var LIB_AREA_H = 870, LIB_STRIP_W = 1770;
+    // The episode strip on a series page: card width, card + gap, and the visible window.
+    // Its cards are wider than the library's posters, so it gets its own numbers.
+    var LIB_EP_CARD_W = 300, LIB_EP_STEP = 322, LIB_EP_VIEW_W = 1740;
     // A row is its heading plus a card (art + title + subtitle): 42 + 287 wide, 42 + 362 poster.
     // The extra room over that keeps the subtitle clear of the row's overflow edge, which a
     // television's own fonts need - on some sets the two text lines are taller than in a browser.
@@ -3502,10 +3505,13 @@
                 }
                 html += '</div>';
             }
-            html += '<div class="lrow" style="position:static;left:0;height:auto;padding-left:0;margin-top:24px">' +
+            html += '<div class="lrow" style="position:static;left:0;width:' + LIB_EP_VIEW_W + 'px;height:auto;padding-left:0;margin-top:24px;overflow:visible">' +
                 '<h3>' + esc(se.loading ? 'Loading episodes...' : se.error ? se.error :
                     (se.eps.length ? se.eps.length + (se.eps.length === 1 ? ' episode' : ' episodes') : 'No episodes here yet')) + '</h3>' +
-                '<div class="lstrip" style="width:1100px;overflow:hidden">';
+                // The window that clips and the track that scrolls are two elements: moving the
+                // window itself carried the whole row off screen along with the cards.
+                '<div class="epclip" style="width:' + (LIB_EP_VIEW_W + 24) + 'px;overflow:hidden;padding:12px;margin:-12px 0 0 -12px;box-sizing:border-box">' +
+                '<div class="lstrip" style="width:' + (se.eps.length ? se.eps.length * LIB_EP_STEP - (LIB_EP_STEP - LIB_EP_CARD_W) : 0) + 'px">';
             for (i2 = 0; i2 < se.eps.length; i2++) {
                 e2 = se.eps[i2];
                 u2 = e2.UserData || {};
@@ -3518,7 +3524,7 @@
                     '<div class="nm">' + esc((libSeriesLabel(e2) ? libSeriesLabel(e2) + ' · ' : '') + (e2.Name || '')) + '</div>' +
                     '<div class="sub">' + esc(libRuntime(e2.RunTimeTicks)) + '</div></div>';
             }
-            html += '</div></div>';
+            html += '</div></div></div>';
         }
         if (u.PlaybackPositionTicks > 0) { html += '<div class="resbar"><b style="width:' + libPct(it) + '%"></b></div>'; }
         html += '</div>';
@@ -3535,8 +3541,14 @@
         box.className = 'open';
         var strip = box.querySelector('.dsim .lstrip');
         if (strip && d.row === rowOf.sim) { strip.style.transform = 'translate3d(' + (-Math.max(0, d.col - 8) * 172) + 'px,0,0)'; }
-        var eps = box.querySelector('#libDetail .lrow .lstrip');
-        if (eps && d.row === rowOf.ep) { eps.style.transform = 'translate3d(' + (-Math.max(0, d.col - 1) * 322) + 'px,0,0)'; }
+        var eps = box.querySelector('.epclip .lstrip');
+        if (eps && d.series) {
+            // Scroll the track inside the fixed window and stop at the end of the row. The 26px
+            // keeps a focused card's ring clear of the clip edge when the last one is selected.
+            var total = d.series.eps.length * LIB_EP_STEP - (LIB_EP_STEP - LIB_EP_CARD_W);
+            var x = d.row === rowOf.ep ? Math.min(Math.max(0, d.col - 1) * LIB_EP_STEP, Math.max(0, total - LIB_EP_VIEW_W + 26)) : 0;
+            eps.style.transform = 'translate3d(' + (-x) + 'px,0,0)';
+        }
     }
 
     function libCloseDetail() {
